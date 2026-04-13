@@ -49,9 +49,13 @@ coverage.xml
 .pytest_cache/
 
 # My stuff
-results/
+results/*.json
 logs/
 temp/
 *.csv
 *.json
 !examples/*.json
+
+# DeepEval 缓存与本地运行记录
+.deepeval/
+deepeval/
