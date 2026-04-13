@@ -37,7 +37,7 @@ class MyCustomModel(DeepEvalBaseLLM):
 # 假设你想用 DeepSeek 或者其他兼容接口
 custom_model = MyCustomModel(
     model_name="qwen3.5-flash", # 或者你需要的模型名称
-    api_key="sk-029322e695224cd7a69b9bce55fc9e4d",
+    api_key="",
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1" # 你的 Base URL
 )
 
