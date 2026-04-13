@@ -1,3 +1,4 @@
 deepeval
 pytest
 langchain_openai
+pandas
