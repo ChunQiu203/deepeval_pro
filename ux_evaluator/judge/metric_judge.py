@@ -1,3 +1,5 @@
+import os
+
 from deepeval.test_case import LLMTestCase,LLMTestCaseParams
 from deepeval.metrics import GEval 
 from deepeval import evaluate
@@ -34,10 +36,14 @@ class MyCustomModel(DeepEvalBaseLLM):
         return "Custom LLM via LangChain"
 
 # --- 实例化并使用 ---
+# 从环境变量中获取 API Key
+api_key = os.getenv("QWEN_API_KEY")
+if not api_key:
+    raise ValueError("未找到 API Key，请确保已设置环境变量")
 # 假设你想用 DeepSeek 或者其他兼容接口
 custom_model = MyCustomModel(
     model_name="qwen3.5-flash", # 或者你需要的模型名称
-    api_key="",
+    api_key=api_key,
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1" # 你的 Base URL
 )
 
