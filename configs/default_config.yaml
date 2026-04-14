@@ -1,0 +1,37 @@
+# 默认配置文件
+
+# LLM Judge 配置
+judge:
+  model: "qwen-turbo"      # 评价模型
+  retry_times: 3      # 失败重试次数
+
+# 要评估的UX指标
+metrics:
+  - name: "信任感"
+    threshold: 0.5
+  - name: "流畅性"
+    threshold: 0.5
+  - name: "清晰度"
+    threshold: 0.5
+  - name: "完整性"
+    threshold: 0.5
+  - name: "简洁性"
+    threshold: 0.5
+  - name: "共情性"
+    threshold: 0.5
+  - name: "一致性"
+    threshold: 0.5
+
+# 数据集配置
+dataset:
+  # 测试数据文件路径
+  data_path: "examples/sample_data.json"
+  # 是否自动清理数据
+  clean_data: true
+
+# 批量评估配置
+batch:
+  # 批次大小，用于限流
+  batch_size: 10
+  # 结果输出路径
+  output_path: "results/evaluation_results.json"
