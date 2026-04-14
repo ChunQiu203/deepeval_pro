@@ -24,4 +24,4 @@ batch:
   # 批次大小，用于限流
   batch_size: 10
   # 结果输出路径
-  output_path: "results/evaluation_results.json"
+  output_path: "results/raw/evaluation_results.json"
