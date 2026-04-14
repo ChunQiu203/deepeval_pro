@@ -14,7 +14,8 @@ from .geval_metrics import (
     get_safety_metric,
     get_dependency_metric,
     get_anthropomorphism_metric,
-    get_empathy_metric
+    get_empathy_metric,
+    create_metric
 )
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "get_safety_metric",
     "get_dependency_metric",
     "get_anthropomorphism_metric",
-    "get_empathy_metric"
+    "get_empathy_metric",
+    "create_metric"
 ]

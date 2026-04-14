@@ -248,3 +248,38 @@ def get_empathy_metric(custom_model, threshold=0.5):
         ],
         strict_mode=False
     )
+def create_metric(
+    name: str,
+    model,
+    criteria: str,
+    threshold: float = 0.5,
+    evaluation_params=None,
+    strict_mode: bool = False
+):
+    """
+    通用指标构建函数（Metric Factory）
+
+    参数：
+    - name: 指标名称（如 Empathy / Trust）
+    - model: 评测使用的 LLM
+    - criteria: 评测标准（prompt）
+    - threshold: 判定通过阈值
+    - evaluation_params: 评测输入字段
+    - strict_mode: 是否严格模式
+    """
+
+    # 默认参数（避免每次都写）
+    if evaluation_params is None:
+        evaluation_params = [
+            LLMTestCaseParams.INPUT,
+            LLMTestCaseParams.ACTUAL_OUTPUT
+        ]
+
+    return GEval(
+        name=name,
+        model=model,
+        threshold=threshold,
+        criteria=criteria,
+        evaluation_params=evaluation_params,
+        strict_mode=strict_mode
+    )
