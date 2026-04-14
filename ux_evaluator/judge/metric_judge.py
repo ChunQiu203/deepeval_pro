@@ -2,6 +2,7 @@
 
 import os
 from typing import List, Dict, Any
+from pathlib import Path
 
 from deepeval.test_case import LLMTestCase
 from deepeval import evaluate
@@ -13,6 +14,27 @@ from ux_evaluator.dataset.loader import TestCase
 import json
 from collections import defaultdict
 from ux_evaluator.metrics.geval_metrics import get_trust_metric, get_understanding_metric,create_metric
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+
+def _load_project_env() -> None:
+    """Load .env from project root for IDE runs that don't inject env vars."""
+    if load_dotenv is None:
+        return
+
+    project_root = Path(__file__).resolve().parents[2]
+    env_path = project_root / ".env"
+
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=False)
+    else:
+        load_dotenv(override=False)
+
+
 class MyCustomModel(DeepEvalBaseLLM):
     def __init__(self, model_name, api_key, base_url):
         # 使用 LangChain 的 ChatOpenAI 来处理所有 OpenAI 格式的接口
@@ -46,11 +68,15 @@ class UXJudge:
         self.model_name = model
         self.retry = retry
 
+        _load_project_env()
+
         # --- 实例化并使用 ---
         # 从环境变量中获取 API Key
-        self.api_key = os.getenv("QWEN_API_KEY")
+        self.api_key = os.getenv("QWEN_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
         if not self.api_key:
-            raise ValueError("未找到 API Key，请确保已设置环境变量")
+            raise ValueError(
+                "未找到 API Key。请在环境变量或项目根目录 .env 中设置 QWEN_API_KEY（或 DASHSCOPE_API_KEY）。"
+            )
 
         # 假设你想用 DeepSeek 或者其他兼容接口
         self.base_url = base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"

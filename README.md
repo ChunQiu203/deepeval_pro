@@ -36,12 +36,25 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. 运行示例
+### 2. 配置 API Key
+```bash
+# Windows Command Prompt
+copy .env.example .env
+
+# macOS / Linux
+cp .env.example .env
+```
+
+在 `.env` 中填写你的 DashScope API Key：
+- `QWEN_API_KEY=...`（推荐）
+- 或 `DASHSCOPE_API_KEY=...`
+
+### 3. 运行示例
 ```bash
 python examples/rag_evaluation_example.py
 ```
 
-### 3. 批量评估
+### 4. 批量评估
 ```bash
 python scripts/batch_evaluate.py --config configs/default_config.yaml
 ```
