@@ -1,3 +1,5 @@
+#python -m ux_evaluator.judge.metric_judge
+
 import os
 from typing import List, Dict, Any
 
@@ -8,7 +10,9 @@ from deepeval.models.base_model import DeepEvalBaseLLM
 
 from ux_evaluator.dataset.loader import TestCase
 
-
+import json
+from collections import defaultdict
+from ux_evaluator.metrics.geval_metrics import get_trust_metric, get_understanding_metric,create_metric
 class MyCustomModel(DeepEvalBaseLLM):
     def __init__(self, model_name, api_key, base_url):
         # 使用 LangChain 的 ChatOpenAI 来处理所有 OpenAI 格式的接口
@@ -24,18 +28,16 @@ class MyCustomModel(DeepEvalBaseLLM):
     # deepeval 在评估指标时会调用这个同步方法
     def generate(self, prompt: str, *args, **kwargs) -> str:
         chat_model = self.load_model()
-        # 忽略 schema 参数，因为 LangChain 的 invoke 方法不支持
         return chat_model.invoke(prompt).content
 
     # deepeval 在异步评估时会调用这个异步方法
     async def a_generate(self, prompt: str, *args, **kwargs) -> str:
         chat_model = self.load_model()
-        # 忽略 schema 参数，因为 LangChain 的 ainvoke 方法不支持
         res = await chat_model.ainvoke(prompt)
         return res.content
 
     def get_model_name(self):
-        return "自定义LLM（通过LangChain）"
+        return "Custom LLM via LangChain"
 
 
 class UXJudge:
@@ -65,11 +67,7 @@ class UXJudge:
         运行情感支持大模型回答的多维度评估。
         直接使用传入的 metrics 列表进行批量测算（对接全局定义的评估指标）。
         """
-        # 避免 Unicode 编码错误，使用 try-except 捕获
-        try:
-            print("开始评估回复的多维度表现...")
-        except UnicodeEncodeError:
-            print("开始评估回复的多维度表现...")
+        print(f"🚀 开始评估回复的多维度表现...")
 
         # 1. 构建测试用例 (Test Case)，将自定义的 TestCase 转换为 DeepEval 的 LLMTestCase
         deepeval_cases = []
@@ -81,17 +79,13 @@ class UXJudge:
             ))
 
         # 3. 运行评估
-        # 直接运行评估，DeepEval 可能会输出 Unicode 字符，但我们已经在其他地方处理了编码问题
         results = evaluate(
             test_cases=deepeval_cases,
             metrics=metrics,
         )
 
         # 4. 提取并打印每个具体指标的得分摘要
-        try:
-            print("\n评估得分摘要:")
-        except UnicodeEncodeError:
-            print("\n评估得分摘要:")
+        print("\n📊 评估得分摘要:")
 
         formatted_results = []
         # 确保 results 存在且包含测试结果
@@ -105,10 +99,7 @@ class UXJudge:
                     # 这里的 name 会自动匹配指标类定义的名称（如 Trustworthiness）
                     name = metric_data.name
                     score = metric_data.score
-                    try:
-                        print(f"- {name:<20}: {score}")
-                    except UnicodeEncodeError:
-                        print(f"- {name:<20}: {score}")
+                    print(f"- {name:<20}: {score}")
 
                     # 兼容不同版本的 DeepEval，优先取 success
                     passed = getattr(metric_data, 'success', False)
@@ -126,16 +117,217 @@ class UXJudge:
                     "overall_passed": overall_passed
                 })
         else:
-            try:
-                print("未获取到有效的评估结果数据。")
-            except UnicodeEncodeError:
-                print("未获取到有效的评估结果数据。")
+            print("❌ 未获取到有效的评估结果数据。")
 
         return formatted_results
+    
+    def evaluate_from_json(
+        self,
+        json_path: str,
+        metrics: List[Any]
+    ) -> Dict[str, Any]:
+        """
+        从 JSON 文件读取测试数据并进行评测（类内入口函数）
+        + 返回平均分统计结果
+        """
+
+        
+
+        print(f"📂 正在读取测试文件: {json_path}")
+
+        # 1. 读取 JSON 文件
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # 2. 转换为 TestCase 列表
+        test_cases = []
+        for item in data:
+            tc = TestCase(
+                input=item.get("input", ""),
+                actual_output=item.get("actual_output", ""),
+                retrieval_context=item.get("retrieval_context", None)
+            )
+            test_cases.append(tc)
+
+        print(f"✅ 读取完成，共 {len(test_cases)} 条测试用例")
+
+        # 3. 执行评测
+        results = self.batch_evaluate(
+            test_cases=test_cases,
+            metrics=metrics
+        )
+
+        print("📊 正在计算平均分...")
+
+        # 4. 统计平均分
+        metric_sum = defaultdict(float)
+        metric_count = defaultdict(int)
+
+        overall_scores = []
+
+        for case in results:
+            case_total = 0
+            case_metric_num = 0
+
+            for metric_name, metric_info in case["metrics"].items():
+                score = metric_info["score"]
+
+                if score is not None:
+                    metric_sum[metric_name] += score
+                    metric_count[metric_name] += 1
+
+                    case_total += score
+                    case_metric_num += 1
+
+            # 每个 case 的平均分（可选）
+            if case_metric_num > 0:
+                overall_scores.append(case_total / case_metric_num)
+
+        # 各指标平均
+        metric_avg = {
+            name: metric_sum[name] / metric_count[name]
+            for name in metric_sum
+        }
+
+        # 总体平均（所有 case 的平均）
+        overall_avg = sum(overall_scores) / len(overall_scores) if overall_scores else 0
+
+        print("\n📈 平均得分结果:")
+        for name, avg in metric_avg.items():
+            print(f"- {name:<20}: {avg:.4f}")
+
+        print(f"\n🌟 Overall Score: {overall_avg:.4f}")
+
+        return {
+            "detail_results": results,   # 每条样本详细结果
+            "metric_average": metric_avg,  # 每个指标平均
+            "overall_average": overall_avg  # 总体平均
+        }
+    def evaluate_from_files(
+        self,
+        data_path: str,
+        metrics_path: str
+    ) -> Dict[str, Any]:
+        """
+        从数据 JSON + 指标 JSON 进行完整评测（配置驱动入口）
+
+        参数：
+        - data_path: 测试数据 JSON 路径
+        - metrics_path: 指标配置 JSON 路径
+        """
+
+        print(f"📂 加载数据文件: {data_path}")
+        print(f"🧩 加载指标文件: {metrics_path}")
+
+        # =========================
+        # 1. 加载测试数据
+        # =========================
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        test_cases = []
+        for i, item in enumerate(data):
+            try:
+                # 基本校验（增强鲁棒性）
+                if "input" not in item or "actual_output" not in item:
+                    print(f"⚠️ 第{i}条数据缺失字段，跳过")
+                    continue
+
+                tc = TestCase(
+                    input=item.get("input", ""),
+                    actual_output=item.get("actual_output", ""),
+                    retrieval_context=item.get("retrieval_context", None)
+                )
+                test_cases.append(tc)
+
+            except Exception as e:
+                print(f"❌ 第{i}条数据解析失败: {e}")
+
+        print(f"✅ 成功加载 {len(test_cases)} 条测试数据")
+
+        # =========================
+        # 2. 加载指标配置
+        # =========================
+        with open(metrics_path, "r", encoding="utf-8") as f:
+            metric_configs = json.load(f)
+
+        metrics = []
+        for cfg in metric_configs:
+            try:
+                metric = create_metric(
+                    name=cfg.get("name"),
+                    model=self.custom_model,
+                    criteria=cfg.get("criteria", ""),
+                    threshold=cfg.get("threshold", 0.5),
+                    evaluation_params=cfg.get("evaluation_params", None),
+                    strict_mode=cfg.get("strict_mode", False)
+                )
+                metrics.append(metric)
+
+            except Exception as e:
+                print(f"❌ 指标加载失败: {cfg.get('name')} - {e}")
+
+        print(f"✅ 成功加载 {len(metrics)} 个评测指标")
+
+        # =========================
+        # 3. 执行评测
+        # =========================
+        results = self.batch_evaluate(
+            test_cases=test_cases,
+            metrics=metrics
+        )
+
+        print("📊 正在计算平均分...")
+
+        # =========================
+        # 4. 统计平均分
+        # =========================
+        metric_sum = defaultdict(float)
+        metric_count = defaultdict(int)
+        overall_scores = []
+
+        for case in results:
+            case_total = 0
+            case_metric_num = 0
+
+            for metric_name, metric_info in case["metrics"].items():
+                score = metric_info["score"]
+
+                if score is not None:
+                    metric_sum[metric_name] += score
+                    metric_count[metric_name] += 1
+
+                    case_total += score
+                    case_metric_num += 1
+
+            if case_metric_num > 0:
+                overall_scores.append(case_total / case_metric_num)
+
+        metric_avg = {
+            name: metric_sum[name] / metric_count[name]
+            for name in metric_sum
+        }
+
+        overall_avg = sum(overall_scores) / len(overall_scores) if overall_scores else 0
+
+        # =========================
+        # 5. 输出结果
+        # =========================
+        print("\n📈 平均得分结果:")
+        for name, avg in metric_avg.items():
+            print(f"- {name:<20}: {avg:.4f}")
+
+        print(f"\n🌟 Overall Score: {overall_avg:.4f}")
+
+        return {
+            "detail_results": results,
+            "metric_average": metric_avg,
+            "overall_average": overall_avg
+        }
 
 
 if __name__ == "__main__":
-    from ux_evaluator.metrics.geval_metrics import get_trustworthiness_metric, get_fluency_metric
+    
 
     sample_input = "我最近真的觉得快崩溃了，工作永远做不完，家里还有一堆烂摊子，感觉自己好失败。"
 
@@ -148,12 +340,20 @@ if __name__ == "__main__":
 
     # 动态组装指标
     test_metrics = [
-        get_trustworthiness_metric(judge.custom_model),
-        get_fluency_metric(judge.custom_model)
+        get_trust_metric(judge.custom_model),
+        get_understanding_metric(judge.custom_model)
     ]
 
     # 现在调用时只需传入测试用例和指标列表即可
-    judge.batch_evaluate(
-        test_cases=[tc],
-        metrics=test_metrics
+    # judge.batch_evaluate(
+    #     test_cases=[tc],
+    #     metrics=test_metrics
+    # )
+    # results = judge.evaluate_from_json(
+    #     json_path="ux_evaluator/dataset/testcases.json",
+    #     metrics=test_metrics
+    # )
+    results = judge.evaluate_from_files(
+        data_path="examples/sample_data.json",
+        metrics_path="examples/metrics.json"
     )
