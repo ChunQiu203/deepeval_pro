@@ -125,8 +125,7 @@ class DatasetLoader:
                 if not input_val or not output_val:
                     # 跳过空输入或空输出的样本
                     continue
-
-            # 有bug，关于字段别名部分，后续可能需要重构到from_dict方法中
+            
             test_case = TestCase(
                 input=input_val,
                 actual_output=output_val,
@@ -135,7 +134,6 @@ class DatasetLoader:
                 retrieval_context=item.get("retrieval_context"),
                 metadata=item.get("metadata")
             )
-
             test_cases.append(test_case)
         
         return test_cases

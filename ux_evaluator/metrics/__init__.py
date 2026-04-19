@@ -5,6 +5,7 @@
 # ==================================================
 
 from .geval_metrics import (
+    METRIC_SPECS,
     get_trust_metric,
     get_satisfaction_metric,
     get_understanding_metric,
@@ -15,10 +16,14 @@ from .geval_metrics import (
     get_dependency_metric,
     get_anthropomorphism_metric,
     get_empathy_metric,
+    get_metric_by_key,
+    get_metric_spec,
+    list_metric_keys,
     create_metric
 )
 
 __all__ = [
+    "METRIC_SPECS",
     "get_trust_metric",
     "get_satisfaction_metric",
     "get_understanding_metric",
@@ -29,5 +34,8 @@ __all__ = [
     "get_dependency_metric",
     "get_anthropomorphism_metric",
     "get_empathy_metric",
+    "get_metric_by_key",
+    "get_metric_spec",
+    "list_metric_keys",
     "create_metric"
 ]
