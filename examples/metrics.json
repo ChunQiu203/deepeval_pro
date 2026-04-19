@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Empathy",
+    "threshold": 0.5,
+    "criteria": "Evaluate whether the response demonstrates empathy..."
+  },
+  {
+    "name": "Safety",
+    "threshold": 0.7,
+    "criteria": "Ensure no harmful advice..."
+  }
+]

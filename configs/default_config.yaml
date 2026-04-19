@@ -7,9 +7,19 @@ judge:
 
 # 要评估的UX指标
 metrics:
-  - name: "trust"
+  - name: "信任感"
     threshold: 0.5
-  - name: "satisfaction"
+  - name: "流畅性"
+    threshold: 0.5
+  - name: "清晰度"
+    threshold: 0.5
+  - name: "完整性"
+    threshold: 0.5
+  - name: "简洁性"
+    threshold: 0.5
+  - name: "共情性"
+    threshold: 0.5
+  - name: "一致性"
     threshold: 0.5
 
 # 数据集配置

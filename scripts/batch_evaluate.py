@@ -6,16 +6,25 @@
 import argparse
 import json
 import os
+import sys
 from typing import List, Dict, Any
 
 import yaml
+
+# 添加项目根目录到Python路径
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # 导入核心模块
 from ux_evaluator.dataset import DatasetLoader
 from ux_evaluator.judge import UXJudge
 from ux_evaluator.metrics import (
-    get_trust_metric,
-    get_satisfaction_metric
+    get_trustworthiness_metric,
+    get_fluency_metric,
+    get_clarity_metric,
+    get_completeness_metric,
+    get_conciseness_metric,
+    get_empathy_metric,
+    get_consistency_metric
 )
 
 
@@ -31,10 +40,20 @@ def init_metrics(metrics_config: List[Dict[str, Any]], custom_model) -> List[Any
     for m in metrics_config:
         name = m["name"]
         threshold = m.get("threshold", 0.5)
-        if name == "trust":
-            metrics.append(get_trust_metric(custom_model=custom_model, threshold=threshold))
-        elif name == "satisfaction":
-            metrics.append(get_satisfaction_metric(custom_model=custom_model, threshold=threshold))
+        if name == "trustworthiness" or name == "信任感":
+            metrics.append(get_trustworthiness_metric(custom_model=custom_model, threshold=threshold))
+        elif name == "fluency" or name == "流畅性":
+            metrics.append(get_fluency_metric(custom_model=custom_model, threshold=threshold))
+        elif name == "clarity" or name == "清晰度":
+            metrics.append(get_clarity_metric(custom_model=custom_model, threshold=threshold))
+        elif name == "completeness" or name == "完整性":
+            metrics.append(get_completeness_metric(custom_model=custom_model, threshold=threshold))
+        elif name == "conciseness" or name == "简洁性":
+            metrics.append(get_conciseness_metric(custom_model=custom_model, threshold=threshold))
+        elif name == "empathy" or name == "共情性":
+            metrics.append(get_empathy_metric(custom_model=custom_model, threshold=threshold))
+        elif name == "consistency" or name == "一致性":
+            metrics.append(get_consistency_metric(custom_model=custom_model, threshold=threshold))
         else:
             raise ValueError(f"不支持的指标: {name}")
     return metrics

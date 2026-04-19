@@ -36,12 +36,25 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. 运行示例
+### 2. 配置 API Key
+```bash
+# Windows Command Prompt
+copy .env.example .env
+
+# macOS / Linux
+cp .env.example .env
+```
+
+在 `.env` 中填写你的 DashScope API Key：
+- `QWEN_API_KEY=...`（推荐）
+- 或 `DASHSCOPE_API_KEY=...`
+
+### 3. 运行示例
 ```bash
 python examples/rag_evaluation_example.py
 ```
 
-### 3. 批量评估
+### 4. 批量评估
 ```bash
 python scripts/batch_evaluate.py --config configs/default_config.yaml
 ```
@@ -50,3 +63,27 @@ python scripts/batch_evaluate.py --config configs/default_config.yaml
 1. **数据集模块**：提供标准化的 `TestCase` 格式，其他模块可直接导入使用
 2. **自动化脚本**：预留了与 `metrics` 和 `judge` 模块的对接接口，待对应模块完成后可直接替换占位实现
 3. 所有模块统一使用 Python >=3.12 版本，依赖版本见 `requirements.txt`
+
+## 质量保障（QA）
+
+当前已建立数据加载模块的基础回归测试，覆盖以下场景：
+- 空样本过滤（`clean_data=True`）
+- 文件不存在时抛出 `FileNotFoundError`
+- 字段别名兼容（`question/query` 与 `answer/output`）
+
+运行方式：
+
+```bash
+python -m pytest tests\test_dataset_loader.py tests\test_batch_evaluate.py -q
+```
+
+生成评估结果与文本报告：
+
+```bash
+python scripts/batch_evaluate.py --config configs/default_config.yaml
+python scripts/generate_report.py --input results/raw/evaluation_results.json --output results/reports/qa_report.txt
+```
+
+报告文件位置：
+- `results/raw/evaluation_results.json`
+- `results/reports/qa_report.txt`
