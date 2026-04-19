@@ -126,7 +126,14 @@ class DatasetLoader:
                     # 跳过空输入或空输出的样本
                     continue
             
-            test_case = TestCase.from_dict(item)
+            test_case = TestCase(
+                input=input_val,
+                actual_output=output_val,
+                expected_output=item.get("expected_output"),
+                context=item.get("context"),
+                retrieval_context=item.get("retrieval_context"),
+                metadata=item.get("metadata")
+            )
             test_cases.append(test_case)
         
         return test_cases
