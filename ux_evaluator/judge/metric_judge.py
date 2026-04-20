@@ -1,4 +1,4 @@
-#python -m ux_evaluator.judge.metric_judge
+# python -m ux_evaluator.judge.metric_judge
 
 import os
 from typing import List, Dict, Any
@@ -18,14 +18,31 @@ from ux_evaluator.metrics import (
     get_trust_metric,
     get_understanding_metric,
 )
+
+# 字典映射：用于终端双文输出
+EN_TO_ZH_JUDGE_MAP = {
+    "Trustworthiness": "信任感",
+    "Understanding": "理解度",
+    "Sense_of_Control": "掌控感",
+    "Efficiency": "效率",
+    "Cognitive_Load": "认知负荷",
+    "Emotional_Satisfaction": "满意度",
+    "Safety": "安全性",
+    "Non_Dependency": "依赖性",
+    "Anthropomorphism": "拟人化",
+    "Empathy": "共情性"
+}
+
+
 class MyCustomModel(DeepEvalBaseLLM):
-    def __init__(self, model_name, api_key, base_url):
+    def __init__(self, model_name, api_key, base_url, *args, **kwargs):
         # 使用 LangChain 的 ChatOpenAI 来处理所有 OpenAI 格式的接口
         self.model = ChatOpenAI(
             model=model_name,
-            openai_api_key=api_key,
+            api_key=api_key,  # 你的大模型 API Key
             base_url=base_url  # 这里的 base_url 会直接指向你的模型供应商
         )
+        super().__init__(*args, **kwargs)
 
     def load_model(self):
         return self.model
@@ -51,14 +68,17 @@ class UXJudge:
         self.model_name = model
         self.retry = retry
 
-        # --- 实例化并使用 ---
-        # 从环境变量中获取 API Key
-        self.api_key = os.getenv("QWEN_API_KEY")
-        if not self.api_key:
-            raise ValueError("未找到 API Key，请确保已设置环境变量")
+        # 根据模型名称自动切换对应的 API Key 和 Base URL
+        if "deepseek" in self.model_name.lower():
+            self.api_key = os.getenv("DEEPSEEK_API_KEY")
+            self.base_url = base_url or "https://api.deepseek.com/v1"
+        else:
+            self.api_key = os.getenv("QWEN_API_KEY")
+            self.base_url = base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
-        # 假设你想用 DeepSeek 或者其他兼容接口
-        self.base_url = base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        if not self.api_key:
+            raise ValueError(f"未找到 API Key，请确保已设置环境变量 ({self.model_name})")
+
         self.dataset_loader = DatasetLoader(clean_data=True)
 
         self.custom_model = MyCustomModel(
@@ -73,7 +93,7 @@ class UXJudge:
         运行情感支持大模型回答的多维度评估。
         直接使用传入的 metrics 列表进行批量测算（对接全局定义的评估指标）。
         """
-        print(f"🚀 开始评估回复的多维度表现...")
+        print(f"🚀 开始评估回复的多维度表现 (Start Evaluation)...")
 
         # 1. 构建测试用例 (Test Case)，将自定义的 TestCase 转换为 DeepEval 的 LLMTestCase
         deepeval_cases = []
@@ -91,7 +111,7 @@ class UXJudge:
         )
 
         # 4. 提取并打印每个具体指标的得分摘要
-        print("\n📊 评估得分摘要:")
+        print("\n📊 评估得分详情 (Evaluation Details):")
 
         formatted_results = []
         # 确保 results 存在且包含测试结果
@@ -100,15 +120,26 @@ class UXJudge:
                 metric_dict = {}
                 overall_passed = True
 
+                print("\n" + "-" * 60)
+                print(f"🎯 正在输出测试用例 (Test Case) {i + 1} / {len(results.test_results)} 的结果:")
+                print("-" * 60)
+
                 # 遍历该用例下所有指标的计算数据
                 for metric_data in test_case_result.metrics_data:
                     # 这里的 name 会自动匹配指标类定义的名称（如 Trustworthiness）
                     name = metric_data.name
+                    zh_name = EN_TO_ZH_JUDGE_MAP.get(name, name)
                     score = metric_data.score
-                    print(f"- {name:<20}: {score}")
 
                     # 兼容不同版本的 DeepEval，优先取 success
                     passed = getattr(metric_data, 'success', False)
+
+                    # 格式化输出样式
+                    status_zh = "🟢 通过" if passed else "🔴 失败"
+                    status_en = "Passed" if passed else "Failed"
+                    display_name = f"[{zh_name} ({name})]"
+
+                    print(f"  ▶ {display_name:<36} | 得分: {score:<4} | 状态: {status_zh} ({status_en})")
 
                     metric_dict[name] = {
                         "score": score,
@@ -171,27 +202,23 @@ class UXJudge:
             except KeyError as exc:
                 print(f"❌ 指标 key 无效: {key} - {exc}")
         return metrics
-    
+
     def evaluate_from_json(
-        self,
-        json_path: str,
-        metric_keys: List[str]
+            self,
+            json_path: str,
+            metric_keys: List[str]
     ) -> Dict[str, Any]:
         """
         从 JSON 文件读取测试数据并进行评测（类内入口函数）
         + 返回平均分统计结果
         """
 
-        
-
-        print(f"📂 正在读取测试文件: {json_path}")
-
+        print(f"📂 正在读取测试文件 (Reading File): {json_path}")
         test_cases = self.dataset_loader.load_from_file(json_path)
-
-        print(f"✅ 读取完成，共 {len(test_cases)} 条测试用例")
+        print(f"✅ 读取完成，共 {len(test_cases)} 条测试用例 (Loaded Cases)")
 
         metrics = self._build_metrics_from_keys(metric_keys)
-        print(f"✅ 成功加载 {len(metrics)} 个评测指标")
+        print(f"✅ 成功加载 {len(metrics)} 个评测指标 (Loaded Metrics)")
 
         # 3. 执行评测
         results = self.batch_evaluate(
@@ -199,40 +226,39 @@ class UXJudge:
             metrics=metrics
         )
 
-        print("📊 正在计算平均分...")
+        print("📊 正在计算平均分 (Calculating Averages)...")
         summary = self._aggregate_results(results)
         metric_avg = summary["metric_average"]
         overall_avg = summary["overall_average"]
 
-        print("\n📈 平均得分结果:")
+        print("\n📈 平均得分结果 (Average Scores):")
         for name, avg in metric_avg.items():
-            print(f"- {name:<20}: {avg:.4f}")
+            zh_name = EN_TO_ZH_JUDGE_MAP.get(name, name)
+            display_name = f"{zh_name} ({name})"
+            print(f"- {display_name:<35}: {avg:.4f}")
 
-        print(f"\n🌟 Overall Score: {overall_avg:.4f}")
+        print(f"\n🌟 总平均分 (Overall Score): {overall_avg:.4f}")
 
         return {
-            "detail_results": results,   # 每条样本详细结果
+            "detail_results": results,  # 每条样本详细结果
             "metric_average": metric_avg,  # 每个指标平均
             "overall_average": overall_avg  # 总体平均
         }
+
     def evaluate_from_files(
-        self,
-        data_path: str,
-        metrics_path: str
+            self,
+            data_path: str,
+            metrics_path: str
     ) -> Dict[str, Any]:
         """
         从数据 JSON + 指标 JSON 进行完整评测（配置驱动入口）
-
-        参数：
-        - data_path: 测试数据 JSON 路径
-        - metrics_path: 指标配置 JSON 路径
         """
 
-        print(f"📂 加载数据文件: {data_path}")
-        print(f"🧩 加载指标文件: {metrics_path}")
+        print(f"📂 加载数据文件 (Data File): {data_path}")
+        print(f"🧩 加载指标文件 (Metric File): {metrics_path}")
 
         test_cases = self.dataset_loader.load_from_file(data_path)
-        print(f"✅ 成功加载 {len(test_cases)} 条测试数据")
+        print(f"✅ 成功加载 {len(test_cases)} 条测试数据 (Loaded Data)")
 
         # =========================
         # 2. 加载指标配置
@@ -264,7 +290,7 @@ class UXJudge:
             except Exception as e:
                 print(f"❌ 指标加载失败: {cfg.get('name')} - {e}")
 
-        print(f"✅ 成功加载 {len(metrics)} 个评测指标")
+        print(f"✅ 成功加载 {len(metrics)} 个评测指标 (Loaded Metrics)")
 
         # =========================
         # 3. 执行评测
@@ -274,7 +300,7 @@ class UXJudge:
             metrics=metrics
         )
 
-        print("📊 正在计算平均分...")
+        print("📊 正在计算平均分 (Calculating Averages)...")
         summary = self._aggregate_results(results)
         metric_avg = summary["metric_average"]
         overall_avg = summary["overall_average"]
@@ -282,47 +308,16 @@ class UXJudge:
         # =========================
         # 5. 输出结果
         # =========================
-        print("\n📈 平均得分结果:")
+        print("\n📈 平均得分结果 (Average Scores):")
         for name, avg in metric_avg.items():
-            print(f"- {name:<20}: {avg:.4f}")
+            zh_name = EN_TO_ZH_JUDGE_MAP.get(name, name)
+            display_name = f"{zh_name} ({name})"
+            print(f"- {display_name:<35}: {avg:.4f}")
 
-        print(f"\n🌟 Overall Score: {overall_avg:.4f}")
+        print(f"\n🌟 总平均分 (Overall Score): {overall_avg:.4f}")
 
         return {
             "detail_results": results,
             "metric_average": metric_avg,
             "overall_average": overall_avg
         }
-
-
-# if __name__ == "__main__":
-    
-
-#     sample_input = "我最近真的觉得快崩溃了，工作永远做不完，家里还有一堆烂摊子，感觉自己好失败。"
-
-#     sample_output = "听起来你现在背负了非常大的压力，工作和家庭的双重重担让你感到喘不过气，这种感觉一定很辛苦吧。在这么困难的情况下你还在努力支撑，已经非常不容易了。你现在最想先从哪一件小事开始理清头绪呢？如果你愿意，我们可以一起慢慢梳理。"
-
-#     # 模拟本地测试调用
-#     tc = TestCase(input=sample_input, actual_output=sample_output)
-
-#     judge = UXJudge(model="qwen3.5-flash")
-
-#     # 动态组装指标
-#     test_metrics = [
-#         get_trust_metric(judge.custom_model),
-#         get_understanding_metric(judge.custom_model)
-#     ]
-
-#     # 现在调用时只需传入测试用例和指标列表即可
-#     # judge.batch_evaluate(
-#     #     test_cases=[tc],
-#     #     metrics=test_metrics
-#     # )
-#     # results = judge.evaluate_from_json(
-#     #     json_path="ux_evaluator/dataset/testcases.json",
-#     #     metrics=test_metrics
-#     # )
-#     results = judge.evaluate_from_files(
-#         data_path="ux_evaluator/dataset/testcases.json",
-#         metrics_path="ux_evaluator/dataset/metrics.json"
-#     )
