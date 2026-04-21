@@ -50,6 +50,7 @@ coverage.xml
 
 # My stuff
 results/
+tests/reports/
 logs/
 temp/
 *.csv

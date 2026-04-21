@@ -81,9 +81,16 @@ python -m pytest tests\test_dataset_loader.py tests\test_batch_evaluate.py -q
 
 ```bash
 python scripts/batch_evaluate.py --config configs/default_config.yaml
-python scripts/generate_report.py --input results/raw/evaluation_results.json --output results/reports/qa_report.txt
+# 首次运行前请先确保输出目录存在（Windows PowerShell）：New-Item -ItemType Directory -Path tests/reports -Force
+python scripts/generate_report.py --input results/evaluation_results.json --output tests/reports/qa_report.txt
+```
+
+一键执行 QA 门禁（测试 + 评估 + 报告）：
+
+```bash
+python scripts/qa_check.py --config configs/default_config.yaml --results-path results/evaluation_results.json --report-path tests/reports/qa_report.txt
 ```
 
 报告文件位置：
-- `results/raw/evaluation_results.json`
-- `results/reports/qa_report.txt`
+- `results/evaluation_results.json`
+- `tests/reports/qa_report.txt`
