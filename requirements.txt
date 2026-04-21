@@ -3,3 +3,4 @@ pytest
 langchain_openai
 pandas
 python-dotenv
+matplotlib

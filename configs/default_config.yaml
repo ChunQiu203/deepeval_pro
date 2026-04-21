@@ -1,24 +1,14 @@
 # 默认配置文件
 
 judge:
-  model: "qwen-turbo"
+  model: "qwen3.5-flash"
   retry_times: 3
 
 # 这里可以直接用中文写指标名，脚本会自动映射到新的 metric_key
 metrics:
-  - name: "信任感"
-    threshold: 0.5
-  - name: "理解度"
-    threshold: 0.5
-  - name: "掌控感"
-    threshold: 0.5
   - name: "效率"
     threshold: 0.5
   - name: "认知负荷"
-    threshold: 0.5
-  - name: "共情性"
-    threshold: 0.5
-  - name: "安全性"
     threshold: 0.5
 
 dataset:
