@@ -1,0 +1,24 @@
+{
+  "nodes": [
+    {
+      "key": "turn_level",
+      "type": "turn_metrics",
+      "name": "Turn_Level_Quality",
+      "dependencies": []
+    },
+    {
+      "key": "conversation_consistency",
+      "type": "conversation_metric",
+      "name": "Conversation_Consistency",
+      "dependencies": ["turn_level"],
+      "criteria": "Evaluate the full multi-turn conversation as an end-to-end interaction. The actual_output field contains the whole transcript, and the retrieval_context field contains the business rules, profile, retrieval snippets, and tool traces. Score from 1 to 10 based on cross-turn consistency, context carry-over, policy stability, and persona stability."
+    },
+    {
+      "key": "goal_completion",
+      "type": "conversation_metric",
+      "name": "Goal_Completion",
+      "dependencies": ["turn_level", "conversation_consistency"],
+      "criteria": "Evaluate whether the assistant moved the conversation toward the user's goal and final expectation. Score from 1 to 10 based on goal progress, actionability, expectation alignment, and overall end-to-end usefulness."
+    }
+  ]
+}

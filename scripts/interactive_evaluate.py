@@ -1,4 +1,3 @@
-# scripts/interactive_evaluate.py
 """交互式配置与批量评测入口脚本"""
 # 注：推荐使用终端运行python.exe interactive_evaluate.py，优于在IDE中直接点击运行
 import os
@@ -6,6 +5,8 @@ import sys
 import yaml
 import json
 import traceback
+from typing import Any, Dict, List
+
 from dotenv import load_dotenv
 
 # ----------------- UI 库 Rich 配置模块 -----------------
@@ -40,6 +41,12 @@ from ux_evaluator.dataset import DatasetLoader
 from scripts.batch_evaluate import init_metrics, _resolve_path
 # 导入指标规范字典，用于帮助说明和动态配置
 from ux_evaluator.metrics import METRIC_SPECS
+from ux_evaluator.metrics.dag import (
+    ConversationDAGEvaluator,
+    load_conversation_cases,
+    load_dag_config,
+    load_turn_metric_configs,
+)
 
 # 全局中英文字段映射字典，用于界面显示与结果回显
 EN_TO_ZH_MAP = {
@@ -74,6 +81,19 @@ def load_default_config(project_root):
     config_path = os.path.join(project_root, "configs/default_config.yaml")
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def ensure_interactive_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
+    """补齐交互脚本需要的默认字段，不影响原有 classic 配置。"""
+    if "batch" not in config:
+        config["batch"] = {"output_path": "results/evaluation_results.json"}
+
+    batch = config["batch"]
+    batch.setdefault("output_path", "results/evaluation_results.json")
+    batch.setdefault("evaluation_mode", "classic")
+    batch.setdefault("dag_config_path", "examples/dag_config.json")
+    batch.setdefault("metrics_path", "examples/metrics.json")
+    return config
 
 
 def show_help():
@@ -246,8 +266,91 @@ def modify_metrics_menu(config):
             Prompt.ask("[dim]按 [回车键] 继续...[/]")
 
 
+def _render_dag_summary(results: Dict[str, Any], output_path: str) -> None:
+    summary = results.get("summary", {})
+    console.print(f"\n[bold green]💾 DAG 评估完成！结果已成功保存至: {output_path}[/]")
+
+    overview = Table(title="[bold magenta]🧭 多轮对话评测摘要[/]", box=box.SIMPLE, show_header=False)
+    overview.add_column("项目", style="cyan")
+    overview.add_column("值", justify="right", style="bold green")
+    overview.add_row("会话数", str(summary.get("case_count", 0)))
+    overview.add_row("轮次结果数", str(results.get("turn_result_count", 0)))
+    overview.add_row("总平均分", f"{summary.get('overall_average', 0):.4f}")
+    overview.add_row("DAG 总平均分", f"{summary.get('dag_overall_average', 0):.4f}")
+    console.print(overview)
+
+    dag_node_average = summary.get("dag_node_average") or {}
+    if dag_node_average:
+        node_table = Table(title="[bold magenta]🕸️ DAG 节点平均分[/]", box=box.SIMPLE, show_header=False)
+        node_table.add_column("节点", style="cyan")
+        node_table.add_column("得分", justify="right", style="bold green")
+        for node_name, score in dag_node_average.items():
+            node_table.add_row(node_name, f"{score:.4f}")
+        console.print(node_table)
+
+
+def run_dag_evaluation(config, project_root):
+    """执行 DAG 多轮会话评测逻辑，仅作为 classic 流程的补充分支。"""
+    clear_console()
+
+    with console.status("[bold cyan]⏳ 正在初始化 DAG 评测器...[/]", spinner="dots"):
+        try:
+            judge = UXJudge(
+                model=config["judge"]["model"],
+                retry=config["judge"].get("retry_times", 3),
+                base_url=config["judge"].get("base_url"),
+            )
+
+            data_path = _resolve_path(project_root, config["dataset"]["data_path"])
+            dag_config_path = _resolve_path(project_root, config["batch"]["dag_config_path"])
+            metrics_path = _resolve_path(project_root, config["batch"]["metrics_path"])
+            output_path = _resolve_path(project_root, config["batch"]["output_path"])
+
+            cases = load_conversation_cases(data_path)
+            node_specs = load_dag_config(dag_config_path)
+            evaluator = ConversationDAGEvaluator(judge=judge, node_specs=node_specs)
+
+            turn_metrics: List[Any]
+            if config["batch"].get("metrics_path"):
+                metric_configs = load_turn_metric_configs(metrics_path)
+                turn_metrics = evaluator.build_turn_metrics_from_configs(metric_configs)
+            else:
+                metrics_list = config.get("metrics", [])
+                if not metrics_list:
+                    console.print("\n[bold red]❌ 错误：DAG 模式下未找到 metrics_path，也没有 classic metrics 可回退。[/]")
+                    Prompt.ask("\n[bold yellow]按 [回车键] 返回主菜单...[/]")
+                    return
+                turn_metrics = init_metrics(metrics_list, judge.custom_model)
+
+        except Exception as e:
+            console.print(f"\n[bold red]❌ DAG 初始化阶段出现错误: {str(e)}[/]")
+            traceback.print_exc()
+            Prompt.ask("\n[bold yellow]按 [回车键] 返回主菜单...[/]")
+            return
+
+    try:
+        results = evaluator.evaluate_cases(cases=cases, metrics=turn_metrics)
+
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+
+        _render_dag_summary(results, output_path)
+    except Exception as e:
+        console.print(f"\n[bold red]❌ 运行 DAG 评估过程中出现错误: {str(e)}[/]")
+        traceback.print_exc()
+
+    Prompt.ask("\n[bold yellow]测试结束，按 [回车键] 返回主菜单...[/]")
+
+
 def run_batch_evaluation(config, project_root):
     """执行批量测试集的评测逻辑（加入 loading 和对齐优化）"""
+    if config.get("batch", {}).get("evaluation_mode", "classic") == "dag":
+        run_dag_evaluation(config, project_root)
+        return
+
     clear_console()
 
     # 动态加载动画，提升长耗时任务体验
@@ -331,9 +434,7 @@ def main():
         console.print("[bold red]❌ 错误：找不到 configs/default_config.yaml 文件，请确保在项目根目录运行或文件存在。[/]")
         return
 
-    # 确保 config 中有 batch 节点，防止意外报错
-    if "batch" not in config:
-        config["batch"] = {"output_path": "results/evaluation_results.json"}
+    ensure_interactive_defaults(config)
 
     # 主菜单循环
     while True:
@@ -348,13 +449,24 @@ def main():
 
         # 获取当前的输出路径（带默认值兜底）
         current_output_path = config['batch'].get('output_path', 'results/evaluation_results.json')
+        evaluation_mode = config['batch'].get('evaluation_mode', 'classic')
+        dag_config_path = config['batch'].get('dag_config_path', 'examples/dag_config.json')
+        metrics_path = config['batch'].get('metrics_path', 'examples/metrics.json')
+
+        dag_display = ""
+        if evaluation_mode == "dag":
+            dag_display = (
+                f"  - [cyan]DAG 配置路径 (DAG Config)[/] : [bold green]{dag_config_path}[/]\n"
+                f"  - [cyan]指标配置路径 (Metrics JSON)[/]: [bold green]{metrics_path}[/]\n"
+            )
 
         menu_text = f"""
 [bold magenta]【当前配置概览 (Current Configuration)】[/]
-  - [cyan]评判模型 (Judge Model)[/]  : [bold green]{config['judge']['model']}[/]
-  - [cyan]数据集路径 (Data Path)[/]  : [bold green]{config['dataset']['data_path']}[/]
+  - [cyan]评测模式 (Evaluation Mode)[/] : [bold green]{evaluation_mode}[/]
+  - [cyan]评判模型 (Judge Model)[/]    : [bold green]{config['judge']['model']}[/]
+  - [cyan]数据集路径 (Data Path)[/]    : [bold green]{config['dataset']['data_path']}[/]
   - [cyan]输出保存路径 (Output Path)[/]: [bold green]{current_output_path}[/]
-  - [cyan]当前生效指标 (Metrics)[/]  : [bold green]{len(current_metrics)} 个[/]
+{dag_display}  - [cyan]当前生效指标 (Metrics)[/]    : [bold green]{len(current_metrics)} 个[/]
 {metrics_display}
 [bold magenta]【操作菜单 (Main Menu)】[/]
   [bold green][1] ⚡ 运行当前测试集评测 (Run Batch Evaluation)[/]
@@ -362,6 +474,9 @@ def main():
   [cyan][3] 📂 修改数据集路径 (Change Dataset Path)[/]
   [cyan][4] 📊 配置评价指标 (Configure Evaluation Metrics)[/]
   [cyan][5] 📁 修改输出保存路径 (Change Output Path)[/]
+  [cyan][6] 🕸️ 切换评测模式 (Classic / DAG)[/]
+  [cyan][7] 🧭 修改 DAG 配置路径 (Change DAG Config Path)[/]
+  [cyan][8] 🧾 修改 DAG 指标配置路径 (Change Metrics JSON Path)[/]
   [dim]\\[/help] 📖 查看帮助与指标说明 (Show Help & Info)[/]
   [dim][0] 🚪 退出程序 (Exit)[/]
 """
@@ -394,13 +509,34 @@ def main():
                 Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
         elif choice == '4':
             modify_metrics_menu(config)
-        elif choice == '5': # 新增的处理逻辑
+        elif choice == '5':
             new_out_path = Prompt.ask(
                 f"\n[bold yellow]👉 请输入新的结果保存路径 (例: results/my_test.json) [[dim]当前: {current_output_path}[/]][/]"
             ).strip()
             if new_out_path:
                 config['batch']['output_path'] = new_out_path
                 console.print("[bold green]✅ 输出保存路径已更新！[/]")
+                Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+        elif choice == '6':
+            next_mode = "dag" if evaluation_mode == "classic" else "classic"
+            config['batch']['evaluation_mode'] = next_mode
+            console.print(f"[bold green]✅ 评测模式已切换为: {next_mode}[/]")
+            Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+        elif choice == '7':
+            new_dag_path = Prompt.ask(
+                f"\n[bold yellow]👉 请输入新的 DAG 配置路径 [[dim]当前: {dag_config_path}[/]][/]"
+            ).strip()
+            if new_dag_path:
+                config['batch']['dag_config_path'] = new_dag_path
+                console.print("[bold green]✅ DAG 配置路径已更新！[/]")
+                Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+        elif choice == '8':
+            new_metrics_path = Prompt.ask(
+                f"\n[bold yellow]👉 请输入新的 DAG 指标配置路径 [[dim]当前: {metrics_path}[/]][/]"
+            ).strip()
+            if new_metrics_path:
+                config['batch']['metrics_path'] = new_metrics_path
+                console.print("[bold green]✅ DAG 指标配置路径已更新！[/]")
                 Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
         elif choice == '/help':
             show_help()
