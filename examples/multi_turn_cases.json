@@ -1,0 +1,70 @@
+{
+  "version": "1.0",
+  "cases": [
+    {
+      "case_id": "conv_001",
+      "scene": "refund",
+      "user_profile": {
+        "persona": "anxious",
+        "goal": "request a refund quickly"
+      },
+      "global_context": {
+        "business_rules": [
+          "Orders can use a 7-day refund window before activation.",
+          "Activated orders are not eligible for no-reason refunds."
+        ]
+      },
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "I bought the course yesterday. Can I get a refund?",
+          "assistant": "I can help check that. Was the course already activated?",
+          "retrieval_context": [
+            "Refund eligibility depends on whether the course was activated."
+          ],
+          "expected": {
+            "should_answer": true,
+            "should_ask_clarifying_question": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Yes, it was activated, but I have not watched it.",
+          "assistant": "If the course has already been activated, it usually cannot use a no-reason refund. If there is a product issue, I can help you submit an after-sales request.",
+          "retrieval_context": [
+            "Activated orders are not eligible for no-reason refunds.",
+            "Product issues can go through after-sales support."
+          ],
+          "tool_calls": [
+            {
+              "tool_name": "policy_lookup",
+              "tool_input": {
+                "topic": "refund"
+              },
+              "tool_output": {
+                "matched_rules": [
+                  "Activated orders are not eligible for no-reason refunds.",
+                  "Product issues can go through after-sales support."
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "should_follow_policy": true,
+            "should_offer_next_step": true
+          }
+        }
+      ],
+      "final_expectation": {
+        "task_success": true,
+        "should_follow_policy": true,
+        "should_remain_consistent": true
+      },
+      "tags": [
+        "refund",
+        "multi_turn",
+        "customer_support"
+      ]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Iterable, Optional
+﻿from typing import Any, Dict, Iterable, Optional
 
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCaseParams
@@ -7,6 +7,7 @@ from deepeval.test_case import LLMTestCaseParams
 DEFAULT_EVALUATION_PARAMS = [
     LLMTestCaseParams.INPUT,
     LLMTestCaseParams.ACTUAL_OUTPUT,
+    LLMTestCaseParams.RETRIEVAL_CONTEXT, # 新增这一行
 ]
 
 

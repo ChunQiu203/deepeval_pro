@@ -21,7 +21,6 @@ from .geval_metrics import (
     list_metric_keys,
     create_metric
 )
-
 __all__ = [
     "METRIC_SPECS",
     "get_trust_metric",
@@ -37,5 +36,5 @@ __all__ = [
     "get_metric_by_key",
     "get_metric_spec",
     "list_metric_keys",
-    "create_metric"
+    "create_metric",
 ]
