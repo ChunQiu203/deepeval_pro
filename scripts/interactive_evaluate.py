@@ -1,3 +1,4 @@
+# scripts/interactive_evaluate.py
 """交互式配置与批量评测入口脚本"""
 # 注：推荐使用终端运行python.exe interactive_evaluate.py，优于在IDE中直接点击运行
 import os
@@ -5,6 +6,7 @@ import sys
 import yaml
 import json
 import traceback
+import subprocess  # 用于调用自动化验证与报告生成脚本
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
@@ -93,6 +95,11 @@ def ensure_interactive_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     batch.setdefault("evaluation_mode", "classic")
     batch.setdefault("dag_config_path", "examples/dag_config.json")
     batch.setdefault("metrics_path", "examples/metrics.json")
+
+    # --- 门禁与报告默认配置 ---
+    batch.setdefault("min_pass_rate", 0.70)  # 默认质量门禁阈值 70%
+    batch.setdefault("report_path", "tests/reports/qa_report.txt")
+
     return config
 
 
@@ -103,7 +110,7 @@ def show_help():
     clear_console()
 
     help_text = """
-本工具支持对大模型回复进行多维度的 UX（用户体验）量化评估。
+本工具支持对大模型回复进行多维度的 UX（用户体验）量化评估。您可以随时在主菜单修改相关参数。
 
 [bold magenta]【🤖 支持的模型类型 (Supported Models)】[/]
   系统会自动根据输入的模型名称前缀匹配对应的 API 厂商：
@@ -113,15 +120,27 @@ def show_help():
     [dim]* 需在项目根目录 .env 文件配置 DEEPSEEK_API_KEY[/]
   [dim](如需扩展其他模型，请前往 metric_judge.py 中按需添加 API 路由)[/]
 
-[bold magenta]【🛠️ 操作指南 (Operation Guide)】[/]
-  [cyan][1] 运行评测:[/] 根据当前面板上的【模型】、【数据集】和【生效指标】立刻执行批量评测。
-  [cyan][2] 修改模型:[/] 输入你要测试的目标模型名称，系统会自动切换对应的 API。
-  [cyan][3] 修改数据集:[/] 更换你想测试的对话 JSON 文件路径。
-  [cyan][4] 配置评价指标:[/] 进入指标设置面板，你可以便捷地开启/关闭指标，并自定义阈值。
+[bold magenta]【🚀 评测模式说明 (Evaluation Modes)】[/]
+  [cyan]1. Classic (经典单轮) 模式:[/cyan]
+     - 适用场景：简单的单轮问答、RAG生成结果评测。
+     - 运行逻辑：系统使用预设的内存指标集，直接读取单行数据集对模型回复进行打分。
+  [cyan]2. DAG (有向无环图多轮) 模式:[/cyan]
+     - 适用场景：复杂的多轮会话、Agent 任务执行评测。
+     - 运行逻辑：基于设定的 DAG 结构配置文件评估会话状态的流转、连贯性与最终目标达成度。
+     [dim]* 注：DAG模式需额外配置【DAG 结构配置】与【DAG 指标配置】路径。[/]
+
+[bold magenta]【📊 评价指标与门禁 (Metrics & Gate)】[/]
+  [cyan]- 动态启停:[/] 可在菜单 [4] 中随意开启或关闭指定 UX 维度。
+  [cyan]- 阈值调整:[/] 每个指标打分范围为 0.0~1.0。大于等于设定的通过阈值即判定该指标 Pass。
+  [cyan]- 质量门禁:[/] 最终所有 Case 算出的总通过率若低于【门禁阈值】，将触发红色拦截预警。
+
+[bold magenta]【🛡️ 质量保障与导出报告 (QA & Report)】[/]
+  [cyan]- 健康检查:[/] 一键执行集成测试 (pytest)，确保核心代码逻辑正常。
+  [cyan]- 自动报告:[/] 评测结束后自动生成易于阅读的 TXT 文本分析报告，保存在配置目录下。
     """
 
-    console.print(Panel(help_text, title="[bold magenta]📖 UX Evaluator 帮助指南 - [第 1/2 页][/]", border_style="cyan"))
-    Prompt.ask("\n[bold yellow]💡 提示：按 [回车键] 继续查看下一页【评价指标字典】...[/]")
+    console.print(Panel(help_text, title="[bold magenta]📖 UX Evaluator 详细帮助指南 - [第 1/2 页][/]", border_style="cyan"))
+    Prompt.ask("\n[bold yellow]💡 提示：按 [回车键] 继续查看下一页【评价指标字典说明】...[/]")
 
     # ------------------ 第 2 页：指标字典 ------------------
     clear_console()
@@ -141,6 +160,57 @@ def show_help():
 
     console.print("\n[bold green]💡 提示：已经到底啦！[/]")
     Prompt.ask("[bold yellow]按 [回车键] 返回主菜单...[/]")
+
+
+def run_health_check():
+    """自动化验证：运行系统健康检查 (pytest)"""
+    clear_console()
+    console.print(Panel("[bold cyan]🔄 正在后台运行系统健康检查 (执行 pytest)...[/]", border_style="cyan"))
+
+    try:
+        # 调用 pytest，静默输出以保持界面清爽
+        result = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"])
+        if result.returncode == 0:
+            console.print("\n[bold green]✅ 所有核心自动化测试用例通过！系统运行健康。[/]")
+        else:
+            console.print("\n[bold red]❌ 测试未完全通过，请检查最近的代码变动或依赖问题！[/]")
+    except Exception as e:
+        console.print(f"\n[bold red]⚠️ 运行测试时发生异常：{e}[/]")
+
+    Prompt.ask("\n[bold yellow]按 [回车键] 返回主菜单...[/]")
+
+
+def _render_gate_status(pass_rate, min_threshold):
+    """渲染质量门禁判定结果"""
+    status_panel = ""
+    if pass_rate >= min_threshold:
+        status_panel = Panel(
+            f"[bold green]🟢 GATE PASSED (通过)[/]\n当前通过率 {pass_rate:.2%} >= 门禁阈值 {min_threshold:.2%}",
+            border_style="green", title="质量门禁判定"
+        )
+    else:
+        status_panel = Panel(
+            f"[bold red]🔴 GATE FAILED (拦截)[/]\n当前通过率 {pass_rate:.2%} < 门禁阈值 {min_threshold:.2%}",
+            border_style="red", title="质量门禁判定"
+        )
+    console.print(status_panel)
+
+
+def _generate_text_report(output_path, report_path):
+    """调用脚本自动生成 TXT 文本报告"""
+    # 获取 project_root 以拼接绝对路径
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script_path = os.path.join(project_root, "scripts", "generate_report.py")
+
+    try:
+        subprocess.run([
+            sys.executable, script_path,  # <-- 这里使用绝对路径
+            "--input", output_path,
+            "--output", report_path
+        ], check=True, stdout=subprocess.DEVNULL)
+        console.print(f"[bold green]📄 已自动生成分析报告: {report_path}[/]")
+    except Exception as e:
+        console.print(f"[bold red]⚠️ 报告生成失败: {e}[/]")
 
 
 def modify_metrics_menu(config):
@@ -266,7 +336,7 @@ def modify_metrics_menu(config):
             Prompt.ask("[dim]按 [回车键] 继续...[/]")
 
 
-def _render_dag_summary(results: Dict[str, Any], output_path: str) -> None:
+def _render_dag_summary(results: Dict[str, Any], output_path: str):
     summary = results.get("summary", {})
     console.print(f"\n[bold green]💾 DAG 评估完成！结果已成功保存至: {output_path}[/]")
 
@@ -275,8 +345,8 @@ def _render_dag_summary(results: Dict[str, Any], output_path: str) -> None:
     overview.add_column("值", justify="right", style="bold green")
     overview.add_row("会话数", str(summary.get("case_count", 0)))
     overview.add_row("轮次结果数", str(results.get("turn_result_count", 0)))
-    overview.add_row("总平均分", f"{summary.get('overall_average', 0):.4f}")
-    overview.add_row("DAG 总平均分", f"{summary.get('dag_overall_average', 0):.4f}")
+    overview.add_row("单轮总平均分", f"{summary.get('overall_average', 0):.4f}")
+    overview.add_row("DAG 全局平均分", f"{summary.get('dag_overall_average', 0):.4f}")
     console.print(overview)
 
     dag_node_average = summary.get("dag_node_average") or {}
@@ -290,7 +360,7 @@ def _render_dag_summary(results: Dict[str, Any], output_path: str) -> None:
 
 
 def run_dag_evaluation(config, project_root):
-    """执行 DAG 多轮会话评测逻辑，仅作为 classic 流程的补充分支。"""
+    """执行 DAG 多轮会话评测逻辑"""
     clear_console()
 
     with console.status("[bold cyan]⏳ 正在初始化 DAG 评测器...[/]", spinner="dots"):
@@ -331,6 +401,7 @@ def run_dag_evaluation(config, project_root):
     try:
         results = evaluator.evaluate_cases(cases=cases, metrics=turn_metrics)
 
+        # 保存 JSON 结果
         output_dir = os.path.dirname(output_path)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -338,6 +409,15 @@ def run_dag_evaluation(config, project_root):
             json.dump(results, f, ensure_ascii=False, indent=2)
 
         _render_dag_summary(results, output_path)
+
+        # --- 集成门禁与报告 ---
+        summary = results.get("summary", {})
+        pass_rate = summary.get("passed_case_count", 0) / summary.get("case_count", 1)
+        _render_gate_status(pass_rate, config["batch"].get("min_pass_rate", 0.70))
+
+        report_path = _resolve_path(project_root, config["batch"]["report_path"])
+        _generate_text_report(output_path, report_path)
+
     except Exception as e:
         console.print(f"\n[bold red]❌ 运行 DAG 评估过程中出现错误: {str(e)}[/]")
         traceback.print_exc()
@@ -346,14 +426,14 @@ def run_dag_evaluation(config, project_root):
 
 
 def run_batch_evaluation(config, project_root):
-    """执行批量测试集的评测逻辑（加入 loading 和对齐优化）"""
+    """执行经典批量测试集的评测逻辑"""
     if config.get("batch", {}).get("evaluation_mode", "classic") == "dag":
         run_dag_evaluation(config, project_root)
         return
 
     clear_console()
 
-    # 动态加载动画，提升长耗时任务体验
+    # 动态加载动画
     with console.status("[bold cyan]⏳ 正在初始化 LLM Judge 和 评估指标...[/]", spinner="dots"):
         try:
             # 初始化评判模型
@@ -365,7 +445,7 @@ def run_batch_evaluation(config, project_root):
             # 使用当前内存中的 config 初始化指标
             metrics_list = config.get("metrics", [])
             if not metrics_list:
-                console.print("\n[bold red]❌ 错误：当前未配置任何评价指标，请先在菜单 [4] 中开启需要的指标！[/]")
+                console.print("\n[bold red]❌ 错误：当前未配置任何评价指标。[/]")
                 Prompt.ask("\n[bold yellow]按 [回车键] 返回主菜单...[/]")
                 return
 
@@ -387,7 +467,7 @@ def run_batch_evaluation(config, project_root):
         results = judge.batch_evaluate(test_cases, metrics)
         summary = judge._aggregate_results(results)
 
-        # 结果保存
+        # 保存结果
         output_path = _resolve_path(project_root, config["batch"]["output_path"])
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
@@ -395,31 +475,37 @@ def run_batch_evaluation(config, project_root):
 
         console.print(f"\n[bold green]💾 评估完成！结果已成功保存至: {output_path}[/]")
 
-        # 使用 Rich Table 完美解决中英文混合排版不对齐的问题
+        # 打印得分表格
         if summary.get("metric_average"):
-            res_table = Table(title="[bold magenta]📈 【平均得分统计 (Average Scores)】[/]", box=box.SIMPLE,
+            res_table = Table(title="[bold magenta]📈 平均得分统计 (Average Scores)[/]", box=box.SIMPLE,
                               show_header=False)
             res_table.add_column("指标名称", style="cyan")
             res_table.add_column("得分", justify="right", style="bold green")
 
             # 建立英文名到中文名的反向映射字典
             name_to_zh = {spec["name"]: EN_TO_ZH_MAP.get(k, spec["name"]) for k, spec in METRIC_SPECS.items()}
-
             for name, avg in summary["metric_average"].items():
-                zh_name = name_to_zh.get(name, name)
-                display_name = f"{zh_name} ({name})"
-                res_table.add_row(f"• {display_name}", f"{avg:.4f}")
-
+                # --- 清除 DeepEval 自动加上的 [GEval] 后缀 ---
+                clean_name = name.replace(" [GEval]", "")
+                zh_name = name_to_zh.get(clean_name, clean_name)
+                # ------------------------------------------------
+                res_table.add_row(f"• {zh_name} ({clean_name})", f"{avg:.4f}")
             console.print(res_table)
-        else:
-            console.print("[dim]  (无有效指标得分)[/]")
 
-        console.print(
-            f"\n[bold magenta]🌟 总平均分 (Overall Score):[/] [bold green]{summary.get('overall_average', 0):.4f}[/]")
+        console.print(f"\n[bold magenta]🌟 总平均分 (Overall Score):[/] [bold green]{summary.get('overall_average', 0):.4f}[/]")
+
+        # --- 集成门禁与报告 ---
+        total_count = len(results)
+        passed_count = sum(1 for r in results if r.get("overall_passed"))
+        pass_rate = passed_count / total_count if total_count > 0 else 0
+
+        _render_gate_status(pass_rate, config["batch"].get("min_pass_rate", 0.70))
+
+        report_path = _resolve_path(project_root, config["batch"]["report_path"])
+        _generate_text_report(output_path, report_path)
 
     except Exception as e:
-        console.print(f"\n[bold red]❌ 运行评估过程中出现错误: {str(e)}[/]")
-        traceback.print_exc()
+        console.print(f"\n[bold red]❌ 运行评测过程中出现错误: {str(e)}[/]")
 
     Prompt.ask("\n[bold yellow]测试结束，按 [回车键] 返回主菜单...[/]")
 
@@ -427,11 +513,11 @@ def run_batch_evaluation(config, project_root):
 def main():
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # 初始化时加载默认配置
+    # 初始化配置
     try:
         config = load_default_config(project_root)
     except FileNotFoundError:
-        console.print("[bold red]❌ 错误：找不到 configs/default_config.yaml 文件，请确保在项目根目录运行或文件存在。[/]")
+        console.print("[bold red]❌ 错误：找不到 configs/default_config.yaml 文件。[/]")
         return
 
     ensure_interactive_defaults(config)
@@ -440,110 +526,139 @@ def main():
     while True:
         clear_console()
 
-        # 构建主菜单面板内容
+        # 面板数据构建
         current_metrics = config.get('metrics', [])
-        metrics_display = ""
-        for m in current_metrics:
-            m_name = m.get('name', 'Unknown')
-            metrics_display += f"    [dim]* {m_name} (阈值: {m.get('threshold', 0.5)})[/]\n"
+        metrics_display = "".join(
+            [f"      [dim]* {m.get('name', 'Unknown')} (阈值: {m.get('threshold', 0.5)})[/]\n" for m in current_metrics])
 
-        # 获取当前的输出路径（带默认值兜底）
-        current_output_path = config['batch'].get('output_path', 'results/evaluation_results.json')
         evaluation_mode = config['batch'].get('evaluation_mode', 'classic')
-        dag_config_path = config['batch'].get('dag_config_path', 'examples/dag_config.json')
-        metrics_path = config['batch'].get('metrics_path', 'examples/metrics.json')
+        min_pass_rate = config['batch'].get('min_pass_rate', 0.70)
+        current_output_path = config['batch'].get('output_path', '未配置')
+        current_report_path = config['batch'].get('report_path', '未配置')
+        curr_dag = config['batch'].get('dag_config_path', '未配置')
+        curr_metrics_json = config['batch'].get('metrics_path', '未配置')
 
-        dag_display = ""
+        # 动态判定是否为 DAG 模式来决定路径高亮状态，使排版对齐
         if evaluation_mode == "dag":
-            dag_display = (
-                f"  - [cyan]DAG 配置路径 (DAG Config)[/] : [bold green]{dag_config_path}[/]\n"
-                f"  - [cyan]指标配置路径 (Metrics JSON)[/]: [bold green]{metrics_path}[/]\n"
-            )
+            dag_display = f"""
+      - [cyan]DAG 结构配置 (DAG Path)  [/]: [bold yellow]{curr_dag}[/]
+      - [cyan]DAG 指标配置 (Metrics Path)[/]: [bold yellow]{curr_metrics_json}[/]"""
+        else:
+            dag_display = f"""
+      - [dim]DAG 结构配置 (DAG Path)  [/]: [dim]{curr_dag} (仅DAG模式生效)[/]
+      - [dim]DAG 指标配置 (Metrics Path)[/]: [dim]{curr_metrics_json} (仅DAG模式生效)[/]"""
 
         menu_text = f"""
-[bold magenta]【当前配置概览 (Current Configuration)】[/]
-  - [cyan]评测模式 (Evaluation Mode)[/] : [bold green]{evaluation_mode}[/]
-  - [cyan]评判模型 (Judge Model)[/]    : [bold green]{config['judge']['model']}[/]
-  - [cyan]数据集路径 (Data Path)[/]    : [bold green]{config['dataset']['data_path']}[/]
-  - [cyan]输出保存路径 (Output Path)[/]: [bold green]{current_output_path}[/]
-{dag_display}  - [cyan]当前生效指标 (Metrics)[/]    : [bold green]{len(current_metrics)} 个[/]
+    [bold magenta]【当前配置概览 (Configuration)】[/]
+      - [cyan]评测模式 (Mode)          [/]: [bold green]{evaluation_mode.upper()}[/]
+      - [cyan]评判模型 (Model)         [/]: [bold green]{config['judge']['model']}[/]
+      - [cyan]门禁阈值 (Threshold)     [/]: [bold green]{min_pass_rate:.0%}[/]
+      - [cyan]数据集路径 (Data In)     [/]: [bold green]{config['dataset']['data_path']}[/]
+      - [cyan]输出报告路径 (Report Out)[/]: [bold green]{current_report_path}[/]
+      - [cyan]输出结果路径 (JSON Out)  [/]: [bold green]{current_output_path}[/]{dag_display}
+      - [cyan]生效指标 (Active Metrics)[/]: [bold green]{len(current_metrics)} 个[/]
 {metrics_display}
-[bold magenta]【操作菜单 (Main Menu)】[/]
-  [bold green][1] ⚡ 运行当前测试集评测 (Run Batch Evaluation)[/]
-  [cyan][2] 🔧 修改大模型配置 (Change Judge Model)[/]
-  [cyan][3] 📂 修改数据集路径 (Change Dataset Path)[/]
-  [cyan][4] 📊 配置评价指标 (Configure Evaluation Metrics)[/]
-  [cyan][5] 📁 修改输出保存路径 (Change Output Path)[/]
-  [cyan][6] 🕸️ 切换评测模式 (Classic / DAG)[/]
-  [cyan][7] 🧭 修改 DAG 配置路径 (Change DAG Config Path)[/]
-  [cyan][8] 🧾 修改 DAG 指标配置路径 (Change Metrics JSON Path)[/]
-  [dim]\\[/help] 📖 查看帮助与指标说明 (Show Help & Info)[/]
-  [dim][0] 🚪 退出程序 (Exit)[/]
-"""
-        # 使用 Panel 渲染主菜单，自动适应终端宽度
-        console.print(Panel(
-            menu_text.strip(),
-            title="[bold magenta]🚀 UX Evaluator 交互式评测控制台 🚀[/]",
-            border_style="cyan"
-        ))
+    [bold magenta]【操作菜单 (Main Menu)】[/]
+      [bold green][1] ⚡ 运行批量评测 (Run Evaluation)[/]
+      [bold cyan][9] 🛠️ 系统健康检查 (Health Check / pytest)[/]
+      [dim]-----------------------------------------[/]
+      [cyan][2] 🔧 修改评判模型 (Change Judge Model)[/]
+      [cyan][3] 📂 修改数据集路径 (Change Data Path)[/]
+      [cyan][4] 📊 配置评价指标 (Configure Metrics)[/]
+      [cyan][5] 📁 修改输出与报告路径 (Change Output Paths)[/]
+      [cyan][6] 🕸️ 切换评测模式 (Classic <-> DAG)[/]
+      [cyan][7] 🧭 修改 DAG 相关配置路径 (DAG Config Paths)[/]
+      [cyan][8] 🧾 修改门禁阈值 (Change Pass Rate Threshold)[/]
+      [dim]\\[/help] 📖 查看帮助与说明 (Help)[/]
+      [dim][0] 🚪 退出程序 (Exit)[/]
+    """
+        console.print(
+            Panel(menu_text.strip(), title="[bold magenta]🚀 UX Evaluator 交互式控制台[/]", border_style="cyan"))
 
-        choice = Prompt.ask("[bold yellow]👉 请选择操作指令[/]").strip().lower()
+        choice = Prompt.ask("[bold yellow]👉 请输入操作指令[/]").strip().lower()
 
         if choice == '1':
             run_batch_evaluation(config, project_root)
+
         elif choice == '2':
             new_model = Prompt.ask(
-                f"\n[bold yellow]👉 请输入新的评测模型名 (例: deepseek-chat) [[dim]当前: {config['judge']['model']}[/]][/]"
-            ).strip()
+                f"\n[bold yellow]👉 请输入新模型名 (直接回车保持当前: [dim]{config['judge']['model']}[/])[/]").strip()
             if new_model:
                 config['judge']['model'] = new_model
-                console.print("[bold green]✅ 模型配置已更新！[/]")
-                Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+                console.print(f"[bold green]✅ 模型已更新为: {new_model}[/]")
+                Prompt.ask("[dim]按回车继续...[/]")
+
         elif choice == '3':
             new_path = Prompt.ask(
-                f"\n[bold yellow]👉 请输入新的数据集相对路径 [[dim]当前: {config['dataset']['data_path']}[/]][/]"
-            ).strip()
+                f"\n[bold yellow]👉 请输入新数据集路径 (直接回车保持当前: [dim]{config['dataset']['data_path']}[/])[/]").strip()
             if new_path:
                 config['dataset']['data_path'] = new_path
-                console.print("[bold green]✅ 数据集配置已更新！[/]")
-                Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+                console.print(f"[bold green]✅ 数据集路径已更新为: {new_path}[/]")
+                Prompt.ask("[dim]按回车继续...[/]")
+
         elif choice == '4':
             modify_metrics_menu(config)
+
         elif choice == '5':
-            new_out_path = Prompt.ask(
-                f"\n[bold yellow]👉 请输入新的结果保存路径 (例: results/my_test.json) [[dim]当前: {current_output_path}[/]][/]"
-            ).strip()
-            if new_out_path:
-                config['batch']['output_path'] = new_out_path
-                console.print("[bold green]✅ 输出保存路径已更新！[/]")
-                Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+            new_out = Prompt.ask(
+                f"\n[bold yellow]👉 请输入新输出 JSON 路径 (直接回车保持当前: [dim]{current_output_path}[/])[/]").strip()
+            if new_out:
+                config['batch']['output_path'] = new_out
+                console.print(f"[bold green]✅ JSON 输出路径已更新为: {new_out}[/]")
+
+            new_rep = Prompt.ask(
+                f"[bold yellow]👉 请输入新报告 TXT 路径 (直接回车保持当前: [dim]{current_report_path}[/])[/]").strip()
+            if new_rep:
+                config['batch']['report_path'] = new_rep
+                console.print(f"[bold green]✅ TXT 报告路径已更新为: {new_rep}[/]")
+
+            Prompt.ask("\n[bold yellow]按 [回车键] 返回...[/]")
+
         elif choice == '6':
-            next_mode = "dag" if evaluation_mode == "classic" else "classic"
-            config['batch']['evaluation_mode'] = next_mode
-            console.print(f"[bold green]✅ 评测模式已切换为: {next_mode}[/]")
-            Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+            config['batch']['evaluation_mode'] = "dag" if evaluation_mode == "classic" else "classic"
+            console.print(f"\n[bold green]✅ 模式已切换为: {config['batch']['evaluation_mode'].upper()}[/]")
+            Prompt.ask("[dim]按回车继续...[/]")
+
         elif choice == '7':
-            new_dag_path = Prompt.ask(
-                f"\n[bold yellow]👉 请输入新的 DAG 配置路径 [[dim]当前: {dag_config_path}[/]][/]"
-            ).strip()
-            if new_dag_path:
-                config['batch']['dag_config_path'] = new_dag_path
-                console.print("[bold green]✅ DAG 配置路径已更新！[/]")
-                Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+            new_dag = Prompt.ask(
+                f"\n[bold yellow]👉 请输入新的 DAG 结构配置 JSON 路径 (直接回车保持当前: [dim]{curr_dag}[/])[/]").strip()
+            if new_dag:
+                config['batch']['dag_config_path'] = new_dag
+
+            new_metrics = Prompt.ask(
+                f"[bold yellow]👉 请输入新的 DAG 评测指标 JSON 路径 (直接回车保持当前: [dim]{curr_metrics_json}[/])[/]").strip()
+            if new_metrics:
+                config['batch']['metrics_path'] = new_metrics
+
+            console.print("\n[bold green]✅ DAG 相关路径配置处理完毕！[/]")
+            Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+
         elif choice == '8':
-            new_metrics_path = Prompt.ask(
-                f"\n[bold yellow]👉 请输入新的 DAG 指标配置路径 [[dim]当前: {metrics_path}[/]][/]"
-            ).strip()
-            if new_metrics_path:
-                config['batch']['metrics_path'] = new_metrics_path
-                console.print("[bold green]✅ DAG 指标配置路径已更新！[/]")
-                Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
+            new_rate = Prompt.ask(
+                f"\n[bold yellow]👉 请输入新门禁阈值 0.0-1.0 (直接回车保持当前: [dim]{min_pass_rate}[/])[/]").strip()
+            if new_rate:
+                try:
+                    val = float(new_rate)
+                    if 0 <= val <= 1:
+                        config['batch']['min_pass_rate'] = val
+                        console.print(f"[bold green]✅ 门禁阈值已更新为: {val:.0%}[/]")
+                    else:
+                        console.print("[bold red]⚠️ 阈值必须在 0.0 到 1.0 之间。[/]")
+                except ValueError:
+                    console.print("[bold red]⚠️ 输入的不是有效的数字。[/]")
+            Prompt.ask("\n[bold yellow]按 [回车键] 返回...[/]")
+
+        elif choice == '9':
+            run_health_check()
+
         elif choice == '/help':
             show_help()
+
         elif choice in ['0', 'quit', 'exit']:
             clear_console()
             console.print("[bold green]👋 感谢使用 UX Evaluator，再见！\n[/]")
             break
+
         else:
             console.print("\n[bold red]⚠️ 无效的输入，请重新选择。[/]")
             Prompt.ask("[bold yellow]按 [回车键] 继续...[/]")

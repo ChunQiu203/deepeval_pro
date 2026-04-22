@@ -1,5 +1,6 @@
 import json
 import argparse
+import os
 from collections import defaultdict
 
 
@@ -68,6 +69,11 @@ def main():
         help="How many failed cases to include in summary (default: 3)",
     )
     args = parser.parse_args()
+
+    # 获取文件的父目录，如果不存在则自动递归创建
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     with open(args.input, "r", encoding="utf-8") as f:
         results = json.load(f)
