@@ -1,6 +1,6 @@
 deepeval
 pytest
 langchain_openai
-pandas
 python-dotenv
 rich
+PyYAML

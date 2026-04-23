@@ -1,6 +1,6 @@
 import os
 import json
-import pandas as pd
+import csv
 from typing import List, Dict, Any, Optional
 
 
@@ -85,12 +85,16 @@ class DatasetLoader:
             return self.load_from_json(file_path)
         else:
             raise ValueError(f"不支持的文件格式: {ext}，目前仅支持CSV和JSON")
-    
+
     def load_from_csv(self, file_path: str) -> List[TestCase]:
         """从CSV文件加载数据集"""
-        df = pd.read_csv(file_path)
-        # 转换为字典列表
-        raw_data = df.to_dict("records")
+        raw_data = []
+        # 使用 utf-8-sig 编码可以完美兼容带有 BOM 头（Excel保存）的 CSV 文件
+        with open(file_path, mode='r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                raw_data.append(dict(row))
+
         return self._process_raw_data(raw_data)
     
     def load_from_json(self, file_path: str) -> List[TestCase]:
