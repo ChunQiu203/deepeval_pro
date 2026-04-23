@@ -85,6 +85,17 @@ def load_default_config(project_root):
         return yaml.safe_load(f)
 
 
+def save_config(config: Dict[str, Any], project_root: str):
+    """将当前内存中的配置持久化保存到 yaml 文件"""
+    config_path = os.path.join(project_root, "configs/default_config.yaml")
+    try:
+        # 使用 safe_dump 将字典写回 yaml，取消默认的字典排序以保持一定可读性
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+    except Exception as e:
+        console.print(f"[bold red]⚠️ 自动保存配置失败: {e}[/]")
+
+
 def ensure_interactive_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     """补齐交互脚本需要的默认字段，不影响原有 classic 配置。"""
     if "batch" not in config:
@@ -95,6 +106,11 @@ def ensure_interactive_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     batch.setdefault("evaluation_mode", "classic")
     batch.setdefault("dag_config_path", "examples/dag_config.json")
     batch.setdefault("metrics_path", "examples/metrics.json")
+
+    # --- 集成组员的高级参数默认值 ---
+    batch.setdefault("top_failures", 3)
+    config.setdefault("dataset", {}).setdefault("clean_data", True)
+    config.setdefault("judge", {}).setdefault("retry_times", 3)
 
     # --- 门禁与报告默认配置 ---
     batch.setdefault("min_pass_rate", 0.70)  # 默认质量门禁阈值 70%
@@ -136,10 +152,11 @@ def show_help():
 
 [bold magenta]【🛡️ 质量保障与导出报告 (QA & Report)】[/]
   [cyan]- 健康检查:[/] 一键执行集成测试 (pytest)，确保核心代码逻辑正常。
-  [cyan]- 自动报告:[/] 评测结束后自动生成易于阅读的 TXT 文本分析报告，保存在配置目录下。
+  [cyan]- 自动报告:[/] 评测结束后自动生成分析报告。支持 [cyan].txt[/] (纯文本) 或 [cyan].md[/] (Markdown 表格) 格式。
     """
 
-    console.print(Panel(help_text, title="[bold magenta]📖 UX Evaluator 详细帮助指南 - [第 1/2 页][/]", border_style="cyan"))
+    console.print(
+        Panel(help_text, title="[bold magenta]📖 UX Evaluator 详细帮助指南 - [第 1/2 页][/]", border_style="cyan"))
     Prompt.ask("\n[bold yellow]💡 提示：按 [回车键] 继续查看下一页【评价指标字典说明】...[/]")
 
     # ------------------ 第 2 页：指标字典 ------------------
@@ -196,19 +213,24 @@ def _render_gate_status(pass_rate, min_threshold):
     console.print(status_panel)
 
 
-def _generate_text_report(output_path, report_path):
-    """调用脚本自动生成 TXT 文本报告"""
-    # 获取 project_root 以拼接绝对路径
+def _generate_report(config, output_path, report_path):
+    """调用脚本自动生成分析报告，支持自动推断格式与失败案例数控制"""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     script_path = os.path.join(project_root, "scripts", "generate_report.py")
 
+    # 自动推断报告格式
+    fmt = "md" if report_path.lower().endswith(".md") else "txt"
+    top_failures = str(config.get("batch", {}).get("top_failures", 3))
+
     try:
         subprocess.run([
-            sys.executable, script_path,  # <-- 这里使用绝对路径
+            sys.executable, script_path,
             "--input", output_path,
-            "--output", report_path
+            "--output", report_path,
+            "--format", fmt,
+            "--top-failures", top_failures
         ], check=True, stdout=subprocess.DEVNULL)
-        console.print(f"[bold green]📄 已自动生成分析报告: {report_path}[/]")
+        console.print(f"[bold green]📄 已自动生成分析报告 ({fmt.upper()} 格式): {report_path}[/]")
     except Exception as e:
         console.print(f"[bold red]⚠️ 报告生成失败: {e}[/]")
 
@@ -261,7 +283,7 @@ def modify_metrics_menu(config):
         choice = Prompt.ask("\n[bold yellow]👉 请输入操作的序号 (或 'q' 返回)[/]").strip().lower()
 
         if choice == 'q':
-            console.print(f"\n[bold green]✅ 配置已保存！当前生效指标数: {len(current_metrics)}[/]")
+            console.print(f"\n[bold green]✅ 配置已同步！当前生效指标数: {len(current_metrics)}[/]")
             Prompt.ask("[bold yellow]按 [回车键] 返回主菜单...[/]")
             break
 
@@ -416,7 +438,7 @@ def run_dag_evaluation(config, project_root):
         _render_gate_status(pass_rate, config["batch"].get("min_pass_rate", 0.70))
 
         report_path = _resolve_path(project_root, config["batch"]["report_path"])
-        _generate_text_report(output_path, report_path)
+        _generate_report(config, output_path, report_path)
 
     except Exception as e:
         console.print(f"\n[bold red]❌ 运行 DAG 评估过程中出现错误: {str(e)}[/]")
@@ -492,7 +514,8 @@ def run_batch_evaluation(config, project_root):
                 res_table.add_row(f"• {zh_name} ({clean_name})", f"{avg:.4f}")
             console.print(res_table)
 
-        console.print(f"\n[bold magenta]🌟 总平均分 (Overall Score):[/] [bold green]{summary.get('overall_average', 0):.4f}[/]")
+        console.print(
+            f"\n[bold magenta]🌟 总平均分 (Overall Score):[/] [bold green]{summary.get('overall_average', 0):.4f}[/]")
 
         # --- 集成门禁与报告 ---
         total_count = len(results)
@@ -502,7 +525,7 @@ def run_batch_evaluation(config, project_root):
         _render_gate_status(pass_rate, config["batch"].get("min_pass_rate", 0.70))
 
         report_path = _resolve_path(project_root, config["batch"]["report_path"])
-        _generate_text_report(output_path, report_path)
+        _generate_report(config, output_path, report_path)
 
     except Exception as e:
         console.print(f"\n[bold red]❌ 运行评测过程中出现错误: {str(e)}[/]")
@@ -554,7 +577,7 @@ def main():
       - [cyan]评判模型 (Model)         [/]: [bold green]{config['judge']['model']}[/]
       - [cyan]门禁阈值 (Threshold)     [/]: [bold green]{min_pass_rate:.0%}[/]
       - [cyan]数据集路径 (Data In)     [/]: [bold green]{config['dataset']['data_path']}[/]
-      - [cyan]输出报告路径 (Report Out)[/]: [bold green]{current_report_path}[/]
+      - [cyan]输出报告路径 (Report Out)[/]: [bold green]{current_report_path} (支持 .txt / .md)[/]
       - [cyan]输出结果路径 (JSON Out)  [/]: [bold green]{current_output_path}[/]{dag_display}
       - [cyan]生效指标 (Active Metrics)[/]: [bold green]{len(current_metrics)} 个[/]
 {metrics_display}
@@ -568,7 +591,7 @@ def main():
       [cyan][5] 📁 修改输出与报告路径 (Change Output Paths)[/]
       [cyan][6] 🕸️ 切换评测模式 (Classic <-> DAG)[/]
       [cyan][7] 🧭 修改 DAG 相关配置路径 (DAG Config Paths)[/]
-      [cyan][8] 🧾 修改门禁阈值 (Change Pass Rate Threshold)[/]
+      [cyan][8] 🧾 修改门禁阈值与高级参数 (Thresholds & Advanced)[/]
       [dim]\\[/help] 📖 查看帮助与说明 (Help)[/]
       [dim][0] 🚪 退出程序 (Exit)[/]
     """
@@ -585,7 +608,8 @@ def main():
                 f"\n[bold yellow]👉 请输入新模型名 (直接回车保持当前: [dim]{config['judge']['model']}[/])[/]").strip()
             if new_model:
                 config['judge']['model'] = new_model
-                console.print(f"[bold green]✅ 模型已更新为: {new_model}[/]")
+                save_config(config, project_root)
+                console.print(f"[bold green]✅ 模型已更新并自动保存为: {new_model}[/]")
                 Prompt.ask("[dim]按回车继续...[/]")
 
         elif choice == '3':
@@ -593,30 +617,35 @@ def main():
                 f"\n[bold yellow]👉 请输入新数据集路径 (直接回车保持当前: [dim]{config['dataset']['data_path']}[/])[/]").strip()
             if new_path:
                 config['dataset']['data_path'] = new_path
-                console.print(f"[bold green]✅ 数据集路径已更新为: {new_path}[/]")
+                save_config(config, project_root)
+                console.print(f"[bold green]✅ 数据集路径已更新并保存为: {new_path}[/]")
                 Prompt.ask("[dim]按回车继续...[/]")
 
         elif choice == '4':
             modify_metrics_menu(config)
+            save_config(config, project_root)
 
         elif choice == '5':
             new_out = Prompt.ask(
                 f"\n[bold yellow]👉 请输入新输出 JSON 路径 (直接回车保持当前: [dim]{current_output_path}[/])[/]").strip()
             if new_out:
                 config['batch']['output_path'] = new_out
-                console.print(f"[bold green]✅ JSON 输出路径已更新为: {new_out}[/]")
+                save_config(config, project_root)
+                console.print(f"[bold green]✅ JSON 输出路径已更新并保存为: {new_out}[/]")
 
             new_rep = Prompt.ask(
-                f"[bold yellow]👉 请输入新报告 TXT 路径 (直接回车保持当前: [dim]{current_report_path}[/])[/]").strip()
+                f"[bold yellow]👉 请输入新报告路径 [支持 .txt 或 .md] (直接回车保持当前: [dim]{current_report_path}[/])[/]").strip()
             if new_rep:
                 config['batch']['report_path'] = new_rep
-                console.print(f"[bold green]✅ TXT 报告路径已更新为: {new_rep}[/]")
+                save_config(config, project_root)
+                console.print(f"[bold green]✅ 报告路径已更新并保存为: {new_rep}[/]")
 
             Prompt.ask("\n[bold yellow]按 [回车键] 返回...[/]")
 
         elif choice == '6':
             config['batch']['evaluation_mode'] = "dag" if evaluation_mode == "classic" else "classic"
-            console.print(f"\n[bold green]✅ 模式已切换为: {config['batch']['evaluation_mode'].upper()}[/]")
+            save_config(config, project_root)
+            console.print(f"\n[bold green]✅ 模式已切换并保存为: {config['batch']['evaluation_mode'].upper()}[/]")
             Prompt.ask("[dim]按回车继续...[/]")
 
         elif choice == '7':
@@ -630,10 +659,15 @@ def main():
             if new_metrics:
                 config['batch']['metrics_path'] = new_metrics
 
-            console.print("\n[bold green]✅ DAG 相关路径配置处理完毕！[/]")
+            save_config(config, project_root)
+            console.print("\n[bold green]✅ DAG 相关路径配置已更新并保存！[/]")
             Prompt.ask("[bold yellow]按 [回车键] 返回...[/]")
 
         elif choice == '8':
+            clear_console()
+            console.print(Panel("[bold magenta]⚙️ 门禁阈值与高级参数设置[/]", border_style="cyan"))
+
+            # 1. 门禁通过率
             new_rate = Prompt.ask(
                 f"\n[bold yellow]👉 请输入新门禁阈值 0.0-1.0 (直接回车保持当前: [dim]{min_pass_rate}[/])[/]").strip()
             if new_rate:
@@ -645,7 +679,31 @@ def main():
                     else:
                         console.print("[bold red]⚠️ 阈值必须在 0.0 到 1.0 之间。[/]")
                 except ValueError:
-                    console.print("[bold red]⚠️ 输入的不是有效的数字。[/]")
+                    console.print("[bold red]⚠️ 无效数字。[/]")
+
+            # 2. 失败用例展示数量
+            curr_top = config['batch'].get('top_failures', 3)
+            new_top = Prompt.ask(f"[bold yellow]👉 报告中展示的失败用例数 (当前: {curr_top})[/]",
+                                 default=str(curr_top)).strip()
+            if new_top.isdigit():
+                config['batch']['top_failures'] = int(new_top)
+
+            # 3. 数据集清洗开关
+            curr_clean = config['dataset'].get('clean_data', True)
+            clean_status = "开" if curr_clean else "关"
+            new_clean = Prompt.ask(f"[bold yellow]👉 是否自动过滤空数据样本 [y/n] (当前: {clean_status})[/]",
+                                   choices=["y", "n"], default="y" if curr_clean else "n")
+            config['dataset']['clean_data'] = (new_clean == "y")
+
+            # 4. LLM 重试次数
+            curr_retry = config['judge'].get('retry_times', 3)
+            new_retry = Prompt.ask(f"[bold yellow]👉 API 请求失败重试次数 (当前: {curr_retry})[/]",
+                                   default=str(curr_retry)).strip()
+            if new_retry.isdigit():
+                config['judge']['retry_times'] = int(new_retry)
+
+            save_config(config, project_root)
+            console.print("\n[bold green]✅ 所有运行参数已同步并保存！[/]")
             Prompt.ask("\n[bold yellow]按 [回车键] 返回...[/]")
 
         elif choice == '9':
