@@ -28,6 +28,12 @@ deepeval_pro/
 | 技术骨干 | dataset/ + scripts/数据与自动化模块 |
 | 产品与质量负责人 | 报告与质量保障模块 | 
 
+## 快速体验 (Release 下载)
+
+无需配置 Python 环境，直接下载打包好的可执行文件即可体验完整的交互式评测与报告生成   
+👉 **[点击下载 UX Evaluator v1.0.0](https://github.com/ChunQiu203/deepeval_pro/releases/download/v1.0.0/UX_Evaluator_v1.0.0.zip
+)**
+
 ## 快速开始
 ### 1. 安装依赖
 ```bash
