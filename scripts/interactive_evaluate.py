@@ -28,11 +28,18 @@ except ImportError:
     sys.exit(1)
 # ---------------------------------------------------
 
-# 确保能引用到项目根目录的模块
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-# 获取项目根目录
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# --- 兼容 PyInstaller 打包环境的路径逻辑 ---
+if getattr(sys, 'frozen', False):
+    # 如果是打包后的 .exe 运行环境
+    # 1. sys.executable 指向用户双击的 UX_Evaluator.exe 所在的真实物理路径
+    project_root = os.path.dirname(sys.executable)
+    # 2. sys._MEIPASS 是 exe 在后台解压代码的临时目录，确保能 import 里面的模块
+    sys.path.insert(0, sys._MEIPASS)
+else:
+    # 如果是原生 Python 脚本运行环境
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, project_root)
+# --------------------------------------------------------
 
 # 强制加载根目录下的 .env 文件
 env_path = os.path.join(project_root, ".env")
@@ -182,6 +189,14 @@ def show_help():
 def run_health_check():
     """自动化验证：运行系统健康检查 (pytest)"""
     clear_console()
+
+    # --- 新增：如果在 exe 环境下直接拦截 ---
+    if getattr(sys, 'frozen', False):
+        console.print(Panel("[bold yellow]⚠️ 提示：系统健康检查 (pytest) 仅在源码开发环境下可用。产品发布版无需运行。[/]", border_style="yellow"))
+        Prompt.ask("\n[bold yellow]按 [回车键] 返回主菜单...[/]")
+        return
+    # --------------------------------------
+
     console.print(Panel("[bold cyan]🔄 正在后台运行系统健康检查 (执行 pytest)...[/]", border_style="cyan"))
 
     try:
@@ -214,25 +229,30 @@ def _render_gate_status(pass_rate, min_threshold):
 
 
 def _generate_report(config, output_path, report_path):
-    """调用脚本自动生成分析报告，支持自动推断格式与失败案例数控制"""
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    script_path = os.path.join(project_root, "scripts", "generate_report.py")
+    """调用脚本自动生成分析报告（兼容 .exe 打包环境）"""
+    # 直接引入生成报告的 main 函数，摆脱 subprocess，防止 exe 打包后找不到环境
+    from scripts.generate_report import main as gen_report_main
 
     # 自动推断报告格式
     fmt = "md" if report_path.lower().endswith(".md") else "txt"
     top_failures = str(config.get("batch", {}).get("top_failures", 3))
 
+    # 备份原生命令行参数，伪造 sys.argv 传给 generate_report
+    old_argv = sys.argv.copy()
     try:
-        subprocess.run([
-            sys.executable, script_path,
+        sys.argv = [
+            "generate_report.py",
             "--input", output_path,
             "--output", report_path,
             "--format", fmt,
             "--top-failures", top_failures
-        ], check=True, stdout=subprocess.DEVNULL)
+        ]
+        gen_report_main() # 直接调用，无缝生成报告
         console.print(f"[bold green]📄 已自动生成分析报告 ({fmt.upper()} 格式): {report_path}[/]")
     except Exception as e:
         console.print(f"[bold red]⚠️ 报告生成失败: {e}[/]")
+    finally:
+        sys.argv = old_argv # 恢复参数
 
 
 def modify_metrics_menu(config):
@@ -534,7 +554,12 @@ def run_batch_evaluation(config, project_root):
 
 
 def main():
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # --- 使用兼容 PyInstaller 的路径，避免覆盖全局正确路径 ---
+    if getattr(sys, 'frozen', False):
+        project_root = os.path.dirname(sys.executable)
+    else:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # ----------------------------------------------------------------
 
     # 初始化配置
     try:
@@ -675,11 +700,12 @@ def main():
                     val = float(new_rate)
                     if 0 <= val <= 1:
                         config['batch']['min_pass_rate'] = val
+                        save_config(config, project_root)
                         console.print(f"[bold green]✅ 门禁阈值已更新为: {val:.0%}[/]")
                     else:
                         console.print("[bold red]⚠️ 阈值必须在 0.0 到 1.0 之间。[/]")
                 except ValueError:
-                    console.print("[bold red]⚠️ 无效数字。[/]")
+                    console.print("[bold red]⚠️ 输入的不是有效的数字。[/]")
 
             # 2. 失败用例展示数量
             curr_top = config['batch'].get('top_failures', 3)

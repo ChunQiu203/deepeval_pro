@@ -185,11 +185,12 @@ def main():
         report_text = generate_txt_report(total, passed, pass_rate, metric_sum, metric_count, metric_rates,
                                           failed_cases)
 
-    print(report_text)
-
+    # 如果指定了输出路径，则写入文件；否则打印到控制台
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(report_text + "\n")
+    else:
+        print(report_text)
 
 
 if __name__ == "__main__":
