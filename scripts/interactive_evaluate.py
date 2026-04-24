@@ -139,7 +139,7 @@ def show_help():
   系统会自动根据输入的模型名称前缀匹配对应的 API 厂商：
   [cyan]- 通义千问 (Qwen)系列:[/] 如 'qwen-turbo', 'qwen-plus', 'qwen-max'
     [dim]* 需在项目根目录 .env 文件配置 QWEN_API_KEY[/]
-  [cyan]- 深度求索 (DeepSeek)系列:[/] 如 'deepseek-chat', 'deepseek-reasoner'
+  [cyan]- 深度求索 (DeepSeek)系列:[/] 如 'deepseek-v4-flash', 'deepseek-v4-pro'
     [dim]* 需在项目根目录 .env 文件配置 DEEPSEEK_API_KEY[/]
   [dim](如需扩展其他模型，请前往 metric_judge.py 中按需添加 API 路由)[/]
 
