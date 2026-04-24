@@ -127,9 +127,9 @@ def ensure_interactive_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def show_help():
-    """显示帮助菜单与所有指标的具体说明（增加翻页逻辑，使用 Rich 优化排版）"""
+    """显示帮助菜单、指标说明及数据集字段规范"""
 
-    # ------------------ 第 1 页：操作说明 ------------------
+    # ------------------ 第 1 页：操作说明与数据规范 ------------------
     clear_console()
 
     help_text = """
@@ -139,7 +139,7 @@ def show_help():
   系统会自动根据输入的模型名称前缀匹配对应的 API 厂商：
   [cyan]- 通义千问 (Qwen)系列:[/] 如 'qwen-turbo', 'qwen-plus', 'qwen-max'
     [dim]* 需在项目根目录 .env 文件配置 QWEN_API_KEY[/]
-  [cyan]- 深度求索 (DeepSeek)系列:[/] 如 'deepseek-chat', 'deepseek-reasoner'
+  [cyan]- 深度求索 (DeepSeek)系列:[/] 如 'deepseek-v4-flash', 'deepseek-v4-pro'
     [dim]* 需在项目根目录 .env 文件配置 DEEPSEEK_API_KEY[/]
   [dim](如需扩展其他模型，请前往 metric_judge.py 中按需添加 API 路由)[/]
 
@@ -151,6 +151,18 @@ def show_help():
      - 适用场景：复杂的多轮会话、Agent 任务执行评测。
      - 运行逻辑：基于设定的 DAG 结构配置文件评估会话状态的流转、连贯性与最终目标达成度。
      [dim]* 注：DAG模式需额外配置【DAG 结构配置】与【DAG 指标配置】路径。[/]
+
+[bold magenta]【文件格式要求 (File Formats)】[/]
+  - [cyan]JSON / JSONL:[/] 支持标准数组或每行一个对象的格式。
+  - [cyan]CSV:[/] 建议使用 [dim]utf-8-sig[/] 编码以完美兼容 Excel。
+  - [cyan]XLSX:[/] 支持原生 Excel 文件（需安装 openpyxl）。
+
+[bold magenta]【字段映射别名 (Field Aliases)】[/]
+  系统会自动识别以下表头并映射为内部标准字段：
+  - [cyan]用户输入 (Input):[/] 支持 [green]input, question, query[/]
+  - [cyan]模型输出 (Output):[/] 支持 [green]actual_output, output, answer[/]
+  - [cyan]检索上下文 (Retrieval):[/] 必须为 [green]retrieval_context[/]
+  - [cyan]其他可选:[/] [green]context[/] (历史), [green]expected_output[/] (参考答案)
 
 [bold magenta]【📊 评价指标与门禁 (Metrics & Gate)】[/]
   [cyan]- 动态启停:[/] 可在菜单 [4] 中随意开启或关闭指定 UX 维度。

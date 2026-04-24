@@ -1,6 +1,7 @@
 import os
 import json
 import csv
+import ast  # 用于安全地将字符串解析为列表/字典
 from typing import List, Dict, Any, Optional
 
 
@@ -70,7 +71,7 @@ class DatasetLoader:
         从文件加载数据集，自动识别文件格式
         
         Args:
-            file_path: 数据文件路径，支持.csv/.json
+            file_path: 数据文件路径，支持.csv/.json/.xlsx
         
         Returns:
             标准化后的测试用例列表
@@ -83,8 +84,10 @@ class DatasetLoader:
             return self.load_from_csv(file_path)
         elif ext == ".json":
             return self.load_from_json(file_path)
+        elif ext == ".xlsx":  # 仅支持 .xlsx
+            return self.load_from_excel(file_path)
         else:
-            raise ValueError(f"不支持的文件格式: {ext}，目前仅支持CSV和JSON")
+            raise ValueError(f"不支持的文件格式: {ext}，目前仅支持CSV、JSON和XLSX")
 
     def load_from_csv(self, file_path: str) -> List[TestCase]:
         """从CSV文件加载数据集"""
@@ -115,29 +118,106 @@ class DatasetLoader:
                         raw_data.append(json.loads(line))
         
         return self._process_raw_data(raw_data)
-    
+
+    def load_from_excel(self, file_path: str) -> List[TestCase]:
+        """从 Excel (.xlsx) 文件加载数据集"""
+        try:
+            import openpyxl
+        except ImportError:
+            raise ImportError("处理 Excel 文件需要安装 openpyxl 库，请运行: pip install openpyxl")
+
+        try:
+            # data_only=True 确保读取的是公式计算后的值，而不是公式本身
+            workbook = openpyxl.load_workbook(file_path, data_only=True)
+            sheet = workbook.active
+
+            raw_data = []
+            headers = []
+
+            # iter_rows(values_only=True) 直接返回单元格的值，性能更好
+            for i, row in enumerate(sheet.iter_rows(values_only=True)):
+                if i == 0:
+                    # 第一行为表头，如果有空表头则自动生成一个占位符
+                    headers = [str(cell).strip() if cell is not None else f"col_{j}" for j, cell in enumerate(row)]
+                else:
+                    # 将数据行与表头组装成字典
+                    row_dict = {}
+                    for j, cell in enumerate(row):
+                        # 处理空单元格，统一转换为空字符串，避免影响后续的 clean_data 判断
+                        val = "" if cell is None else str(cell).strip()
+                        # 防止由于数据列比表头列多导致的索引越界
+                        if j < len(headers):
+                            row_dict[headers[j]] = val
+
+                    raw_data.append(row_dict)
+
+            return self._process_raw_data(raw_data)
+        except Exception as e:
+            raise RuntimeError(f"加载 Excel 文件失败: {str(e)}")
+
     def _process_raw_data(self, raw_data: List[Dict[str, Any]]) -> List[TestCase]:
         """处理原始数据，清洗并标准化为TestCase"""
+
+        def _parse_string_to_list(val: Any) -> Optional[List[str]]:
+            """内部辅助函数：将 Excel 中的字符串列表智能转换为真正的 Python 列表"""
+            if not val:
+                return None
+            if isinstance(val, list):
+                return val
+            if isinstance(val, str):
+                val = val.strip()
+                # 如果长得像列表 "['a', 'b']"
+                if val.startswith('[') and val.endswith(']'):
+                    try:
+                        parsed = ast.literal_eval(val)
+                        if isinstance(parsed, list):
+                            return [str(i) for i in parsed]
+                    except (ValueError, SyntaxError):
+                        pass
+                # 如果不是列表格式，就把它当成单个元素的列表
+                return [val]
+            return None
+
+        def _parse_string_to_dict(val: Any) -> Dict[str, Any]:
+            """内部辅助函数：将 Excel 中的字符串字典转换为真正的 Python 字典"""
+            if isinstance(val, dict):
+                return val
+            if isinstance(val, str):
+                val = val.strip()
+                if val.startswith('{') and val.endswith('}'):
+                    try:
+                        parsed = ast.literal_eval(val)
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except (ValueError, SyntaxError):
+                        pass
+            return {}
+
         test_cases = []
         for item in raw_data:
-            # 自动适配不同的字段名，兼容用户的自定义字段
+            # 自动适配不同的字段名
             input_val = item.get("input", item.get("question", item.get("query", "")))
             output_val = item.get("actual_output", item.get("output", item.get("answer", "")))
-            
+
             # 清洗数据：过滤空样本
             if self.clean_data:
                 if not input_val or not output_val:
                     # 跳过空输入或空输出的样本
                     continue
-            
+
+            # 智能解析 retrieval_context 和 metadata
+            retrieval_val = item.get("retrieval_context", item.get("知识库片段"))
+            context_val = item.get("context", item.get("历史对话"))
+            meta_val = item.get("metadata", item.get("元数据"))
+
             test_case = TestCase(
-                input=input_val,
-                actual_output=output_val,
-                expected_output=item.get("expected_output"),
-                context=item.get("context"),
-                retrieval_context=item.get("retrieval_context"),
-                metadata=item.get("metadata")
+                input=str(input_val).strip(),
+                actual_output=str(output_val).strip(),
+                expected_output=str(item.get("expected_output", "")).strip() if item.get("expected_output") else None,
+                context=_parse_string_to_list(context_val),
+                retrieval_context=_parse_string_to_list(retrieval_val),  # 在这里调用解析函数
+                metadata=_parse_string_to_dict(meta_val)  # 在这里解析字典
             )
             test_cases.append(test_case)
-        
+
         return test_cases
